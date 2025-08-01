@@ -56,12 +56,16 @@ class pHLATCRAnalyzer:
                 'GSHSMRY',  # Alpha1 domain motif
                 'WSDRVI',   # Alpha2 domain motif
                 'FKAFLKQ',  # Alpha3 domain motif
+                'TGAASC',   # Common motif
+                'RGEC',     # Additional pattern
             ],
             'domain_boundaries': {
                 'alpha1': (1, 90),
                 'alpha2': (91, 180),
                 'alpha3': (181, 276),
-            }
+            },
+            'disulfide_cysteines': [25, 101, 164, 236],  # Typical cysteine positions
+            'hydrophobic_residues_high': True,  # MHC heavy chains are typically hydrophobic
         }
     
     def _load_tcr_patterns(self) -> Dict:
@@ -72,18 +76,24 @@ class pHLATCRAnalyzer:
                 'conserved_motifs': [
                     'FGXGT',    # CDR3 C-terminal
                     'WYQQKP',   # Framework regions
+                    'YKFK',     # Framework 1
+                    'TLTIS',    # Framework 3
                 ],
                 'v_gene_patterns': ['TRAV', 'TCRAV'],
                 'j_gene_patterns': ['TRAJ', 'TCRAJ'],
+                'cdr3_patterns': ['CAS', 'CAV', 'CAI'],  # Common CDR3 starts
             },
             'beta': {
                 'length_range': (240, 290),
                 'conserved_motifs': [
                     'FGGGT',    # CDR3 C-terminal
                     'WYQQKP',   # Framework regions
+                    'MGIGV',    # Framework 1
+                    'SVGD',     # Framework 2
                 ],
                 'v_gene_patterns': ['TRBV', 'TCRBV'],
                 'j_gene_patterns': ['TRBJ', 'TCRBJ'],
+                'cdr3_patterns': ['CAS', 'CAW', 'CAT'],  # Common CDR3 starts
             }
         }
     
@@ -269,7 +279,7 @@ class pHLATCRAnalyzer:
     def _determine_chain_type(self, sequence: str, length: int, 
                             properties: Dict, used_types: Set) -> str:
         """
-        Determine the type of a single chain.
+        Determine the type of a single chain using comprehensive scoring.
         
         Args:
             sequence: Amino acid sequence
@@ -280,44 +290,106 @@ class pHLATCRAnalyzer:
         Returns:
             Predicted chain type
         """
-        # β2-microglobulin is usually shortest and has distinctive pattern
-        if (self.b2m_patterns['length_range'][0] <= length <= 
-            self.b2m_patterns['length_range'][1] and 
-            'b2m' not in used_types):
-            
-            # Check for β2m conserved motifs
-            b2m_score = sum(1 for motif in self.b2m_patterns['conserved_motifs'] 
-                           if motif in sequence)
-            if b2m_score >= 1:  # At least one conserved motif
-                return 'b2m'
+        # Calculate scores for each possible chain type
+        scores = {}
         
-        # Peptide antigen (usually shortest after β2m)
-        if length < 20 and 'peptide' not in used_types:
-            return 'peptide'
+        if 'peptide' not in used_types:
+            scores['peptide'] = self._score_peptide(sequence, length, properties)
         
-        # MHC heavy chain (typically longest)
-        if (self.mhc_patterns['length_range'][0] <= length <= 
-            self.mhc_patterns['length_range'][1] and 
-            'mhc_heavy' not in used_types):
-            
-            # Check for MHC conserved motifs
-            mhc_score = sum(1 for motif in self.mhc_patterns['conserved_motifs'] 
-                           if motif in sequence)
-            if mhc_score >= 1:
-                return 'mhc_heavy'
+        if 'b2m' not in used_types:
+            scores['b2m'] = self._score_b2m(sequence, length, properties)
         
-        # TCR chains
+        if 'mhc_heavy' not in used_types:
+            scores['mhc_heavy'] = self._score_mhc(sequence, length, properties)
+        
         if 'tcr_alpha' not in used_types:
-            alpha_score = self._score_tcr_alpha(sequence, length)
-            if alpha_score > 0.5:
-                return 'tcr_alpha'
+            scores['tcr_alpha'] = self._score_tcr_alpha(sequence, length)
         
         if 'tcr_beta' not in used_types:
-            beta_score = self._score_tcr_beta(sequence, length)
-            if beta_score > 0.5:
-                return 'tcr_beta'
+            scores['tcr_beta'] = self._score_tcr_beta(sequence, length)
         
-        # Default classification based on length and what's missing
+        # Find the highest scoring type
+        if scores:
+            best_type = max(scores.items(), key=lambda x: x[1])
+            if best_type[1] > 0.3:  # Minimum confidence threshold
+                return best_type[0]
+        
+        # Fallback to length-based assignment
+        return self._fallback_assignment(length, used_types)
+    
+    def _score_peptide(self, sequence: str, length: int, properties: Dict) -> float:
+        """Score likelihood of being a peptide antigen."""
+        score = 0.0
+        
+        # Length scoring - peptides are typically 8-15 residues
+        if 8 <= length <= 15:
+            score += 0.8
+        elif length < 8:
+            score += 0.4
+        elif length <= 20:
+            score += 0.2
+        else:
+            score -= 0.3
+        
+        # Very short sequences are likely peptides
+        if length < 12:
+            score += 0.3
+        
+        return min(max(score, 0.0), 1.0)
+    
+    def _score_b2m(self, sequence: str, length: int, properties: Dict) -> float:
+        """Score likelihood of being β2-microglobulin."""
+        score = 0.0
+        
+        # Length check - β2m is very consistent around 99 residues
+        b2m_range = self.b2m_patterns['length_range']
+        if b2m_range[0] <= length <= b2m_range[1]:
+            score += 0.5
+            # Bonus for being close to 99
+            if abs(length - 99) <= 3:
+                score += 0.2
+        
+        # Check conserved motifs
+        motif_score = sum(1 for motif in self.b2m_patterns['conserved_motifs'] 
+                         if motif in sequence)
+        score += motif_score * 0.15
+        
+        # Molecular weight check
+        mw = properties.get('molecular_weight', 0)
+        if 11000 <= mw <= 13000:
+            score += 0.15
+        
+        return min(score, 1.0)
+    
+    def _score_mhc(self, sequence: str, length: int, properties: Dict) -> float:
+        """Score likelihood of being MHC heavy chain."""
+        score = 0.0
+        
+        # Length check
+        mhc_range = self.mhc_patterns['length_range']
+        if mhc_range[0] <= length <= mhc_range[1]:
+            score += 0.4
+        
+        # Check conserved motifs
+        motif_score = sum(1 for motif in self.mhc_patterns['conserved_motifs'] 
+                         if motif in sequence)
+        score += motif_score * 0.12
+        
+        # MHC heavy chains are typically the longest in the complex
+        if length > 300:
+            score += 0.2
+        
+        # Check for cysteine residues at expected positions
+        cys_score = 0
+        for pos in self.mhc_patterns['disulfide_cysteines']:
+            if pos < len(sequence) and sequence[pos-1] == 'C':  # 1-indexed to 0-indexed
+                cys_score += 1
+        score += (cys_score / len(self.mhc_patterns['disulfide_cysteines'])) * 0.2
+        
+        return min(score, 1.0)
+    
+    def _fallback_assignment(self, length: int, used_types: Set) -> str:
+        """Fallback assignment based on length when scoring fails."""
         if 'peptide' not in used_types and length < 20:
             return 'peptide'
         elif 'b2m' not in used_types and length < 150:
@@ -342,13 +414,22 @@ class pHLATCRAnalyzer:
         
         # Motif checks
         motifs = self.tcr_patterns['alpha']['conserved_motifs']
-        for motif in motifs:
-            if motif in sequence:
-                score += 0.2
+        motif_count = sum(1 for motif in motifs if motif in sequence)
+        score += motif_count * 0.15
         
-        # Additional TCR-specific patterns
-        if 'FGXGT' in sequence or 'FGGGT' in sequence:
-            score += 0.3
+        # CDR3 patterns
+        cdr3_patterns = self.tcr_patterns['alpha']['cdr3_patterns']
+        cdr3_count = sum(1 for pattern in cdr3_patterns if pattern in sequence)
+        score += cdr3_count * 0.1
+        
+        # TCR-specific C-terminal patterns
+        c_terminal = sequence[-20:] if len(sequence) >= 20 else sequence
+        if any(pattern in c_terminal for pattern in ['FGXGT', 'FGGGT', 'FGAGT', 'FGQGT']):
+            score += 0.25
+        
+        # TCR alpha chains typically shorter than beta
+        if 200 <= length <= 240:
+            score += 0.1
         
         return min(score, 1.0)
     
@@ -363,13 +444,27 @@ class pHLATCRAnalyzer:
         
         # Motif checks
         motifs = self.tcr_patterns['beta']['conserved_motifs']
-        for motif in motifs:
-            if motif in sequence:
-                score += 0.2
+        motif_count = sum(1 for motif in motifs if motif in sequence)
+        score += motif_count * 0.15
+        
+        # CDR3 patterns
+        cdr3_patterns = self.tcr_patterns['beta']['cdr3_patterns']
+        cdr3_count = sum(1 for pattern in cdr3_patterns if pattern in sequence)
+        score += cdr3_count * 0.1
+        
+        # TCR-specific C-terminal patterns
+        c_terminal = sequence[-20:] if len(sequence) >= 20 else sequence
+        if any(pattern in c_terminal for pattern in ['FGGGT', 'FGQGT', 'FGPGT']):
+            score += 0.25
         
         # TCR beta tends to be longer than alpha
         if length > 250:
-            score += 0.2
+            score += 0.15
+        
+        # Beta-specific N-terminal patterns
+        n_terminal = sequence[:20] if len(sequence) >= 20 else sequence
+        if any(pattern in n_terminal for pattern in ['MGIGV', 'MDSGL']):
+            score += 0.15
         
         return min(score, 1.0)
     
@@ -391,18 +486,34 @@ class pHLATCRAnalyzer:
             type_counts[chain_type] += 1
         
         # Ensure we don't have duplicates of unique chains
-        unique_types = ['mhc_heavy', 'b2m']
+        unique_types = ['mhc_heavy', 'b2m', 'peptide']
         for unique_type in unique_types:
             if type_counts[unique_type] > 1:
                 # Keep the best candidate, reassign others
                 candidates = [(cid, info) for cid, info in chain_info.items() 
                              if assignments[cid] == unique_type]
                 
-                # Keep the best candidate (could implement better scoring here)
-                best_candidate = max(candidates, key=lambda x: x[1]['length'])
+                # Keep the best candidate based on scoring
+                best_candidate = None
+                best_score = -1
                 
+                for chain_id, info in candidates:
+                    if unique_type == 'peptide':
+                        score = self._score_peptide(info['sequence'], info['length'], info['properties'])
+                    elif unique_type == 'b2m':
+                        score = self._score_b2m(info['sequence'], info['length'], info['properties'])
+                    elif unique_type == 'mhc_heavy':
+                        score = self._score_mhc(info['sequence'], info['length'], info['properties'])
+                    else:
+                        score = 0
+                    
+                    if score > best_score:
+                        best_score = score
+                        best_candidate = chain_id
+                
+                # Reassign all but the best candidate
                 for chain_id, _ in candidates:
-                    if chain_id != best_candidate[0]:
+                    if chain_id != best_candidate:
                         assignments[chain_id] = 'unknown'
         
         return assignments

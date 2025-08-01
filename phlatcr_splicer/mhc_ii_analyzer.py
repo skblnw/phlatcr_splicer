@@ -336,6 +336,7 @@ class pMHCIITCRAnalyzer:
     def _detect_complexes_by_counting(self, chain_info: Dict) -> List[Dict]:
         """
         Detect complexes by counting potential chain types for MHC-II.
+        Enhanced algorithm that understands MHC-II α/β pairing requirements.
         """
         # Score all chains for all types
         potential_types = {
@@ -345,6 +346,8 @@ class pMHCIITCRAnalyzer:
             'tcr_alpha': [],
             'tcr_beta': []
         }
+        
+        all_scores = {}
         
         for chain_id, info in chain_info.items():
             seq = info['sequence']
@@ -360,6 +363,8 @@ class pMHCIITCRAnalyzer:
                 'tcr_beta': self._score_tcr_beta(seq, length)
             }
             
+            all_scores[chain_id] = scores
+            
             # Add to potential types if score is reasonable
             for chain_type, score in scores.items():
                 if score > 0.3:  # Threshold for being a potential candidate
@@ -369,71 +374,170 @@ class pMHCIITCRAnalyzer:
         for chain_type in potential_types:
             potential_types[chain_type].sort(key=lambda x: x[1], reverse=True)
         
-        # Count strong candidates for unique types (no b2m in MHC-II)
-        strong_peptides = len([s for _, s in potential_types['peptide'] if s > 0.6])
-        strong_mhc_alpha = len([s for _, s in potential_types['mhc_ii_alpha'] if s > 0.6])
-        strong_mhc_beta = len([s for _, s in potential_types['mhc_ii_beta'] if s > 0.6])
+        # Enhanced MHC-II complex detection
+        # Each MHC-II complex MUST have: 1 α + 1 β + 1 peptide + 1 TCR α + 1 TCR β
         
-        # Estimate number of complexes
-        num_complexes = max(strong_peptides, strong_mhc_alpha, strong_mhc_beta, 1)
+        # Count clear peptides (these define the number of complexes most reliably)
+        clear_peptides = [cid for cid, score in potential_types['peptide'] if score > 0.8]
         
-        if num_complexes == 1:
+        # If we have clear peptides, use that as the base count
+        if clear_peptides:
+            estimated_complexes = len(clear_peptides)
+        else:
+            # Fallback: estimate based on total chain count
+            estimated_complexes = max(1, len(chain_info) // 5)  # 5 chains per MHC-II complex
+        
+        if self.verbose:
+            print(f"MHC-II complex estimation: {estimated_complexes} complexes based on {len(clear_peptides)} clear peptides")
+        
+        if estimated_complexes == 1:
             return [chain_info]
         
-        # Group chains into complexes
+        # Build complexes using sophisticated pairing
+        complexes = self._build_mhc_ii_complexes(chain_info, all_scores, estimated_complexes)
+        
+        return complexes if len(complexes) > 1 else [chain_info]
+    
+    def _build_mhc_ii_complexes(self, chain_info: Dict, all_scores: Dict, num_complexes: int) -> List[Dict]:
+        """
+        Build MHC-II complexes using sophisticated pairing algorithm.
+        """
         complexes = []
         assigned_chains = set()
         
+        # Get candidates for each type
+        peptide_candidates = [(cid, all_scores[cid]['peptide']) for cid in chain_info.keys() 
+                             if all_scores[cid]['peptide'] > 0.6]
+        peptide_candidates.sort(key=lambda x: x[1], reverse=True)
+        
+        # For each estimated complex, try to build a complete set
         for i in range(num_complexes):
             complex_chains = {}
             
-            # Assign one of each unique type per complex
-            for unique_type in ['peptide', 'mhc_ii_alpha', 'mhc_ii_beta']:
-                candidates = potential_types[unique_type]
-                score_threshold = 0.3 if unique_type != 'mhc_ii_alpha' else 0.1  # Lower threshold for MHC
-                for chain_id, score in candidates:
-                    if chain_id not in assigned_chains and score > score_threshold:
-                        complex_chains[chain_id] = chain_info[chain_id]
-                        assigned_chains.add(chain_id)
-                        break
-            
-            complexes.append(complex_chains)
-        
-        # Assign remaining TCR chains
-        tcr_chains = []
-        for chain_type in ['tcr_alpha', 'tcr_beta']:
-            for chain_id, score in potential_types[chain_type]:
-                if chain_id not in assigned_chains and score > 0.3:
-                    tcr_chains.append((chain_id, chain_type, score))
-        
-        # Distribute TCR chains among complexes
-        tcr_chains.sort(key=lambda x: x[2], reverse=True)
-        
-        for chain_id, chain_type, score in tcr_chains:
-            # Find complex that needs this type
-            best_complex_idx = 0
-            for i, complex_chains in enumerate(complexes):
-                # Check how many TCR chains this complex already has
-                tcr_count = sum(1 for cid in complex_chains.keys() 
-                              if len(chain_info[cid]['sequence']) > 150)
-                if tcr_count < 2:  # Each complex should have 2 TCR chains
-                    best_complex_idx = i
+            # 1. Assign peptide (highest scoring available)
+            peptide_assigned = False
+            for chain_id, score in peptide_candidates:
+                if chain_id not in assigned_chains:
+                    complex_chains[chain_id] = chain_info[chain_id]
+                    assigned_chains.add(chain_id)
+                    peptide_assigned = True
+                    if self.verbose:
+                        print(f"  Complex {i+1}: Assigned peptide {chain_id} (score: {score:.3f})")
                     break
             
-            complexes[best_complex_idx][chain_id] = chain_info[chain_id]
-            assigned_chains.add(chain_id)
+            # 2. Find best MHC-II α chain (that hasn't been assigned)
+            best_alpha = None
+            best_alpha_score = 0
+            for chain_id in chain_info.keys():
+                if (chain_id not in assigned_chains and 
+                    all_scores[chain_id]['mhc_ii_alpha'] > best_alpha_score and
+                    all_scores[chain_id]['mhc_ii_alpha'] > 0.5):
+                    best_alpha = chain_id
+                    best_alpha_score = all_scores[chain_id]['mhc_ii_alpha']
+            
+            if best_alpha:
+                complex_chains[best_alpha] = chain_info[best_alpha]
+                assigned_chains.add(best_alpha)
+                if self.verbose:
+                    print(f"  Complex {i+1}: Assigned MHC-II α {best_alpha} (score: {best_alpha_score:.3f})")
+            
+            # 3. Find best MHC-II β chain (prefer chains that score poorly for α but reasonably for β)
+            best_beta = None
+            best_beta_score = 0
+            for chain_id in chain_info.keys():
+                if chain_id not in assigned_chains:
+                    alpha_score = all_scores[chain_id]['mhc_ii_alpha']
+                    beta_score = all_scores[chain_id]['mhc_ii_beta']
+                    tcr_alpha_score = all_scores[chain_id]['tcr_alpha']
+                    tcr_beta_score = all_scores[chain_id]['tcr_beta']
+                    length = len(chain_info[chain_id]['sequence'])
+                    
+                    # Enhanced MHC-II β selection logic
+                    # Prefer chains that:
+                    # 1. Are in extended MHC-II length range (160-220)
+                    # 2. Score lower for α than for β, OR have reasonable β score, OR fit length profile
+                    # 3. Don't score highly for TCR
+                    # 4. Haven't been assigned yet
+                    is_mhc_length = 160 <= length <= 220
+                    prefers_beta = beta_score >= alpha_score
+                    reasonable_beta = beta_score > 0.1
+                    not_strong_tcr = max(tcr_alpha_score, tcr_beta_score) < 0.7
+                    
+                    # Calculate composite score for β chain selection
+                    composite_beta_score = beta_score
+                    if is_mhc_length:
+                        composite_beta_score += 0.2
+                    if prefers_beta:
+                        composite_beta_score += 0.1
+                    if not_strong_tcr:
+                        composite_beta_score += 0.1
+                    
+                    if (is_mhc_length and (prefers_beta or reasonable_beta) and 
+                        not_strong_tcr and composite_beta_score > best_beta_score):
+                        best_beta = chain_id
+                        best_beta_score = composite_beta_score
+            
+            if best_beta:
+                complex_chains[best_beta] = chain_info[best_beta]
+                assigned_chains.add(best_beta)
+                if self.verbose:
+                    print(f"  Complex {i+1}: Assigned MHC-II β {best_beta} (score: {best_beta_score:.3f})")
+            
+            # 4. Assign TCR chains (highest scoring available)
+            # TCR α
+            best_tcr_alpha = None
+            best_tcr_alpha_score = 0
+            for chain_id in chain_info.keys():
+                if (chain_id not in assigned_chains and 
+                    all_scores[chain_id]['tcr_alpha'] > best_tcr_alpha_score and
+                    all_scores[chain_id]['tcr_alpha'] > 0.5):
+                    best_tcr_alpha = chain_id
+                    best_tcr_alpha_score = all_scores[chain_id]['tcr_alpha']
+            
+            if best_tcr_alpha:
+                complex_chains[best_tcr_alpha] = chain_info[best_tcr_alpha]
+                assigned_chains.add(best_tcr_alpha)
+                if self.verbose:
+                    print(f"  Complex {i+1}: Assigned TCR α {best_tcr_alpha} (score: {best_tcr_alpha_score:.3f})")
+            
+            # TCR β
+            best_tcr_beta = None
+            best_tcr_beta_score = 0
+            for chain_id in chain_info.keys():
+                if (chain_id not in assigned_chains and 
+                    all_scores[chain_id]['tcr_beta'] > best_tcr_beta_score and
+                    all_scores[chain_id]['tcr_beta'] > 0.5):
+                    best_tcr_beta = chain_id
+                    best_tcr_beta_score = all_scores[chain_id]['tcr_beta']
+            
+            if best_tcr_beta:
+                complex_chains[best_tcr_beta] = chain_info[best_tcr_beta]
+                assigned_chains.add(best_tcr_beta)
+                if self.verbose:
+                    print(f"  Complex {i+1}: Assigned TCR β {best_tcr_beta} (score: {best_tcr_beta_score:.3f})")
+            
+            if complex_chains:  # Only add if we found at least some chains
+                complexes.append(complex_chains)
         
-        # Add any remaining unassigned chains to complexes
-        for chain_id in chain_info:
-            if chain_id not in assigned_chains:
-                # Add to the smallest complex
-                smallest_idx = min(range(len(complexes)), key=lambda i: len(complexes[i]))
-                complexes[smallest_idx][chain_id] = chain_info[chain_id]
+        # Handle any remaining unassigned chains
+        remaining_chains = {cid: info for cid, info in chain_info.items() if cid not in assigned_chains}
+        if remaining_chains:
+            if complexes:
+                # Add to existing complexes based on best fit
+                for chain_id, info in remaining_chains.items():
+                    best_complex_idx = 0
+                    # Add to the complex with the fewest chains
+                    for i, complex_chains in enumerate(complexes):
+                        if len(complex_chains) < len(complexes[best_complex_idx]):
+                            best_complex_idx = i
+                    complexes[best_complex_idx][chain_id] = info
+                    if self.verbose:
+                        print(f"  Added remaining chain {chain_id} to complex {best_complex_idx + 1}")
+            else:
+                # No complexes were built, return all as single complex
+                complexes = [chain_info]
         
-        # Filter out empty complexes
-        complexes = [c for c in complexes if c]
-        
-        return complexes if len(complexes) > 1 else [chain_info]
+        return complexes
     
     def _detect_complexes_by_spatial_clustering(self, chain_info: Dict, structure) -> List[Dict]:
         """
@@ -703,16 +807,18 @@ class pMHCIITCRAnalyzer:
         """Score likelihood of being MHC-II beta chain."""
         score = 0.0
         
-        # Length scoring
+        # Length scoring - more flexible for real sequences
         beta_range = self.mhc_ii_patterns['beta']['length_range']
         optimal_range = self.mhc_ii_patterns['beta']['optimal_length']
         
         if beta_range[0] <= length <= beta_range[1]:
-            score += 0.7  # Strong weight for correct length
+            score += 0.6  # Strong weight for correct length
             if optimal_range[0] <= length <= optimal_range[1]:
-                score += 0.3  # Bonus for optimal length
-        elif length < beta_range[0] - 10 or length > beta_range[1] + 20:
-            score -= 0.6  # Strong penalty for wrong length
+                score += 0.2  # Bonus for optimal length
+        elif 160 <= length <= 220:  # Extended acceptable range
+            score += 0.4  # Partial credit for close length
+        elif length < 150 or length > 250:
+            score -= 0.5  # Penalty for clearly wrong length
         
         # Check for highly specific MHC-II β patterns
         n_terminal = sequence[:50] if len(sequence) >= 50 else sequence
@@ -728,6 +834,8 @@ class pMHCIITCRAnalyzer:
         # Multiple specific patterns = strong evidence
         if beta_specific_found >= 2:
             score += 0.5
+        elif beta_specific_found >= 1:
+            score += 0.3  # Some bonus for at least one pattern
         
         # N-terminal signature patterns
         for pattern in self.mhc_ii_patterns['beta']['n_terminal_signatures']:
@@ -746,11 +854,49 @@ class pMHCIITCRAnalyzer:
         motif_count = sum(1 for motif in motifs if motif in sequence)
         score += motif_count * 0.1
         
+        # General MHC-II patterns (less specific but more inclusive)
+        general_mhc_patterns = [
+            'FDSD',     # Common in MHC-II sequences
+            'RVRL',     # Framework pattern
+            'EYFM',     # Domain pattern
+            'VYRA',     # Common motif
+            'TRAELD',   # β2 domain pattern
+            'CHVEH',    # β2 domain
+        ]
+        
+        general_pattern_count = sum(1 for pattern in general_mhc_patterns if pattern in sequence)
+        score += general_pattern_count * 0.15  # Moderate boost for general patterns
+        
+        # Amino acid composition scoring (MHC-II chains have characteristic composition)
+        # High aromatic and charged residue content
+        aromatic_count = sum(1 for aa in sequence if aa in 'FYW')
+        charged_count = sum(1 for aa in sequence if aa in 'DEKR')
+        aromatic_fraction = aromatic_count / length if length > 0 else 0
+        charged_fraction = charged_count / length if length > 0 else 0
+        
+        if 0.05 <= aromatic_fraction <= 0.15:  # Typical aromatic content
+            score += 0.1
+        if 0.15 <= charged_fraction <= 0.35:  # Typical charged content
+            score += 0.1
+        
+        # Fallback scoring for sequences with right length but no specific patterns
+        if (160 <= length <= 220 and score < 0.3 and 
+            beta_specific_found == 0):  # No specific patterns found
+            # Check if it's clearly NOT another type
+            not_peptide = length > 25
+            not_tcr = all(all_scores.get('tcr_alpha', 0) < 0.5 and all_scores.get('tcr_beta', 0) < 0.5 
+                         for all_scores in [{'tcr_alpha': self._score_tcr_alpha(sequence, length),
+                                           'tcr_beta': self._score_tcr_beta(sequence, length)}])
+            
+            if not_peptide and not_tcr:
+                score += 0.3  # Fallback score for process of elimination
+        
         # Penalty for TCR-like patterns
         tcr_patterns = (self.tcr_patterns['alpha']['highly_specific_motifs'] + 
                        self.tcr_patterns['beta']['highly_specific_motifs'])
-        if any(pattern in sequence for pattern in tcr_patterns):
-            score -= 0.6
+        tcr_pattern_count = sum(1 for pattern in tcr_patterns if pattern in sequence)
+        if tcr_pattern_count > 0:
+            score -= tcr_pattern_count * 0.3  # Scaled penalty
         
         return min(max(score, 0.0), 1.0)
     

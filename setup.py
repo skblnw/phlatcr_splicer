@@ -55,6 +55,7 @@ setup(
     entry_points={
         "console_scripts": [
             "phlatcr-analyze=phlatcr_splicer.analyzer:main",
+            "mhc-ii-analyze=phlatcr_splicer.mhc_ii_analyzer:main",
         ],
     },
     include_package_data=True,

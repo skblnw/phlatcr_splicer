@@ -7,6 +7,9 @@ and classifies protein chains even when chain IDs are inconsistent.
 """
 
 from .analyzer import pHLATCRAnalyzer
+from .mhc_ii_analyzer import pMHCIITCRAnalyzer
+
+__all__ = ['pHLATCRAnalyzer', 'pMHCIITCRAnalyzer']
 
 __version__ = "0.1.0"
 __author__ = "Your Name"

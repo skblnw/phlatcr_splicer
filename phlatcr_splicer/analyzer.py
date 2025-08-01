@@ -19,7 +19,7 @@ from collections import defaultdict
 import numpy as np
 
 try:
-    from Bio.PDB import PDBParser, Structure, Model, Chain, Residue
+    from Bio.PDB import PDBParser, Structure, Structure, Model, Chain, Residue
     from Bio.PDB.PDBIO import PDBIO
     from Bio.SeqUtils import ProtParam
     from Bio.Seq import Seq
@@ -51,8 +51,9 @@ class pHLATCRAnalyzer:
     def _load_mhc_patterns(self) -> Dict:
         """Load MHC class I heavy chain patterns and characteristics."""
         return {
-            'length_range': (260, 380),  # Typical length range
+            'length_range': (230, 380),  # Extended range for shorter variants
             'optimal_length': (265, 285),  # Most common MHC heavy chain lengths
+            'acceptable_length': (230, 300),  # Acceptable range for most MHC
             'highly_specific_motifs': [
                 'GSHSMR',    # Very specific MHC Heavy N-terminal
                 'GSHSM',     # Highly specific MHC marker
@@ -187,11 +188,24 @@ class pHLATCRAnalyzer:
             for chain_id, info in chain_info.items():
                 print(f"  Chain {chain_id}: {len(info['sequence'])} residues")
         
-        # Classify chains
-        chain_assignments = self._classify_chains(chain_info)
+        # Detect multiple complexes
+        complexes = self._detect_complexes(chain_info, structure)
+        
+        if self.verbose and len(complexes) > 1:
+            print(f"\nDetected {len(complexes)} complexes:")
+            for i, complex_chains in enumerate(complexes, 1):
+                chain_ids = sorted(complex_chains.keys())
+                print(f"  Complex {i}: Chains {', '.join(chain_ids)}")
+        
+        # Classify chains within each complex
+        if len(complexes) > 1:
+            chain_assignments = self._classify_multiple_complexes(complexes)
+        else:
+            # Single complex - use original logic
+            chain_assignments = self._classify_chains(chain_info)
         
         if self.verbose:
-            print("\nChain assignments:")
+            print("\nFinal chain assignments:")
             # Sort by chain ID for consistent output
             for chain_id in sorted(chain_assignments.keys()):
                 print(f"  Chain {chain_id}: {chain_assignments[chain_id]}")
@@ -449,24 +463,50 @@ class pHLATCRAnalyzer:
         
         # Strong length preference for MHC
         mhc_range = self.mhc_patterns['length_range']
-        if mhc_range[0] <= length <= mhc_range[1]:
-            score += 0.6  # Higher weight for correct length
-            # Extra bonus for typical MHC length
-            if 270 <= length <= 280:
-                score += 0.3
-        elif length < 250:
-            # Strong penalty for being too short (can't be MHC)
-            score -= 0.5
+        optimal_range = self.mhc_patterns['optimal_length']
         
-        # Check conserved motifs with higher weight
+        if mhc_range[0] <= length <= mhc_range[1]:
+            score += 0.7  # Strong weight for correct length
+            # Extra bonus for optimal MHC length
+            if optimal_range[0] <= length <= optimal_range[1]:
+                score += 0.4  # Very strong bonus
+            # Acceptable bonus for reasonable MHC length
+            elif self.mhc_patterns['acceptable_length'][0] <= length <= self.mhc_patterns['acceptable_length'][1]:
+                score += 0.2
+        elif length < 200:
+            # Strong penalty for being too short (can't be MHC)
+            score -= 0.8
+        
+        # HIGHLY SPECIFIC MHC PATTERNS - These are almost diagnostic
+        n_terminal = sequence[:50] if len(sequence) >= 50 else sequence
+        c_terminal = sequence[-50:] if len(sequence) >= 50 else sequence
+        
+        # Check for highly specific MHC signatures
+        highly_specific_found = 0
+        for pattern in self.mhc_patterns['highly_specific_motifs']:
+            if pattern in sequence:
+                highly_specific_found += 1
+                score += 0.5  # Very high score for each specific pattern
+        
+        # If we find 2+ highly specific patterns, this is almost certainly MHC
+        if highly_specific_found >= 2:
+            score += 0.6  # Massive bonus for multiple specific patterns
+        # Even one highly specific pattern is very strong evidence
+        elif highly_specific_found >= 1:
+            score += 0.4  # Strong bonus for at least one specific pattern
+        
+        # N-terminal signature patterns (very diagnostic)
+        n_signature_found = False
+        for pattern in self.mhc_patterns['n_terminal_signatures']:
+            if pattern in n_terminal:
+                score += 0.6  # Very strong MHC indicator
+                n_signature_found = True
+                break
+        
+        # Check conserved motifs
         motif_score = sum(1 for motif in self.mhc_patterns['conserved_motifs'] 
                          if motif in sequence)
-        score += motif_score * 0.15
-        
-        # MHC-specific N-terminal patterns
-        n_terminal = sequence[:30] if len(sequence) >= 30 else sequence
-        if any(pattern in n_terminal for pattern in ['GSHSMRY', 'GSHSMR']):
-            score += 0.4  # Strong MHC indicator
+        score += motif_score * 0.1
         
         # MHC heavy chains should NOT have TCR patterns
         # Penalty for TCR-like patterns
@@ -630,6 +670,251 @@ class pHLATCRAnalyzer:
             score -= 0.6  # Penalty for alpha-specific patterns
         
         return min(max(score, 0.0), 1.0)
+    
+    def _detect_complexes(self, chain_info: Dict, structure) -> List[Dict]:
+        """
+        Detect multiple pHLA-TCR complexes in the structure.
+        
+        Args:
+            chain_info: Dictionary with chain information
+            structure: BioPython structure object
+            
+        Returns:
+            List of dictionaries, each containing chains for one complex
+        """
+        # First, try chain counting approach
+        complexes_by_counting = self._detect_complexes_by_counting(chain_info)
+        
+        if self.verbose and len(complexes_by_counting) > 1:
+            print(f"Chain counting suggests {len(complexes_by_counting)} complexes")
+        
+        # If counting detects multiple complexes, use that result
+        if len(complexes_by_counting) > 1:
+            return complexes_by_counting
+        
+        # If counting suggests single complex but we have many chains, try spatial clustering
+        if len(chain_info) >= 8:  # Only try spatial if we have many chains
+            complexes_by_spatial = self._detect_complexes_by_spatial_clustering(chain_info, structure)
+            
+            if self.verbose and len(complexes_by_spatial) > 1:
+                print(f"Spatial clustering suggests {len(complexes_by_spatial)} complexes")
+            
+            return complexes_by_spatial
+        
+        # Default to single complex
+        return complexes_by_counting
+    
+    def _detect_complexes_by_counting(self, chain_info: Dict) -> List[Dict]:
+        """
+        Detect complexes by counting potential chain types.
+        """
+        # Score all chains for all types
+        potential_types = {
+            'peptide': [],
+            'b2m': [],
+            'mhc_heavy': [],
+            'tcr_alpha': [],
+            'tcr_beta': []
+        }
+        
+        for chain_id, info in chain_info.items():
+            seq = info['sequence']
+            length = len(seq)
+            props = info['properties']
+            
+            # Score for each type
+            scores = {
+                'peptide': self._score_peptide(seq, length, props),
+                'b2m': self._score_b2m(seq, length, props),
+                'mhc_heavy': self._score_mhc(seq, length, props),
+                'tcr_alpha': self._score_tcr_alpha(seq, length),
+                'tcr_beta': self._score_tcr_beta(seq, length)
+            }
+            
+            # Add to potential types if score is reasonable
+            for chain_type, score in scores.items():
+                if score > 0.3:  # Threshold for being a potential candidate
+                    potential_types[chain_type].append((chain_id, score))
+        
+        # Sort by score for each type
+        for chain_type in potential_types:
+            potential_types[chain_type].sort(key=lambda x: x[1], reverse=True)
+        
+        # Count strong candidates for unique types
+        strong_peptides = len([s for _, s in potential_types['peptide'] if s > 0.6])
+        strong_b2m = len([s for _, s in potential_types['b2m'] if s > 0.6])
+        strong_mhc = len([s for _, s in potential_types['mhc_heavy'] if s > 0.6])
+        
+        # Estimate number of complexes
+        num_complexes = max(strong_peptides, strong_b2m, strong_mhc, 1)
+        
+        if num_complexes == 1:
+            return [chain_info]
+        
+        # Group chains into complexes
+        complexes = []
+        assigned_chains = set()
+        
+        for i in range(num_complexes):
+            complex_chains = {}
+            
+            # Assign one of each unique type per complex, but be more flexible for MHC
+            for unique_type in ['peptide', 'b2m', 'mhc_heavy']:
+                candidates = potential_types[unique_type]
+                score_threshold = 0.3 if unique_type != 'mhc_heavy' else 0.1  # Lower threshold for MHC
+                for chain_id, score in candidates:
+                    if chain_id not in assigned_chains and score > score_threshold:
+                        complex_chains[chain_id] = chain_info[chain_id]
+                        assigned_chains.add(chain_id)
+                        break
+            
+            complexes.append(complex_chains)
+        
+        # Assign remaining TCR chains
+        tcr_chains = []
+        for chain_type in ['tcr_alpha', 'tcr_beta']:
+            for chain_id, score in potential_types[chain_type]:
+                if chain_id not in assigned_chains and score > 0.3:
+                    tcr_chains.append((chain_id, chain_type, score))
+        
+        # Distribute TCR chains among complexes
+        tcr_chains.sort(key=lambda x: x[2], reverse=True)
+        
+        for chain_id, chain_type, score in tcr_chains:
+            # Find complex that needs this type
+            best_complex_idx = 0
+            for i, complex_chains in enumerate(complexes):
+                # Check how many TCR chains this complex already has
+                tcr_count = sum(1 for cid in complex_chains.keys() 
+                              if len(chain_info[cid]['sequence']) > 150)
+                if tcr_count < 2:  # Each complex should have 2 TCR chains
+                    best_complex_idx = i
+                    break
+            
+            complexes[best_complex_idx][chain_id] = chain_info[chain_id]
+            assigned_chains.add(chain_id)
+        
+        # Add any remaining unassigned chains to complexes
+        for chain_id in chain_info:
+            if chain_id not in assigned_chains:
+                # Add to the smallest complex
+                smallest_idx = min(range(len(complexes)), key=lambda i: len(complexes[i]))
+                complexes[smallest_idx][chain_id] = chain_info[chain_id]
+        
+        # Filter out empty complexes
+        complexes = [c for c in complexes if c]
+        
+        return complexes if len(complexes) > 1 else [chain_info]
+    
+    def _detect_complexes_by_spatial_clustering(self, chain_info: Dict, structure) -> List[Dict]:
+        """
+        Detect complexes by spatial clustering of chain centers.
+        """
+        try:
+            # Calculate center of mass for each chain
+            chain_centers = {}
+            
+            for model in structure:
+                for chain in model:
+                    chain_id = chain.id
+                    if chain_id in chain_info:
+                        # Calculate center of mass
+                        coords = []
+                        for residue in chain:
+                            if residue.has_id('CA'):  # Use alpha carbon
+                                ca_atom = residue['CA']
+                                coords.append(ca_atom.coord)
+                        
+                        if coords:
+                            center = np.mean(coords, axis=0)
+                            chain_centers[chain_id] = center
+            
+            if len(chain_centers) < 2:
+                return [chain_info]
+            
+            # Calculate pairwise distances
+            chain_ids = list(chain_centers.keys())
+            distances = {}
+            
+            for i, chain1 in enumerate(chain_ids):
+                for j, chain2 in enumerate(chain_ids[i+1:], i+1):
+                    dist = np.linalg.norm(chain_centers[chain1] - chain_centers[chain2])
+                    distances[(chain1, chain2)] = dist
+            
+            # Simple clustering: chains within 50Å are in the same complex
+            cluster_threshold = 50.0
+            clusters = []
+            assigned = set()
+            
+            for chain_id in chain_ids:
+                if chain_id in assigned:
+                    continue
+                
+                cluster = {chain_id}
+                to_check = [chain_id]
+                
+                while to_check:
+                    current = to_check.pop()
+                    for other_chain in chain_ids:
+                        if other_chain in cluster or other_chain in assigned:
+                            continue
+                        
+                        # Check distance
+                        pair = tuple(sorted([current, other_chain]))
+                        if pair in distances and distances[pair] < cluster_threshold:
+                            cluster.add(other_chain)
+                            to_check.append(other_chain)
+                
+                clusters.append(cluster)
+                assigned.update(cluster)
+            
+            # Convert clusters to complex format
+            complexes = []
+            for cluster in clusters:
+                complex_chains = {cid: chain_info[cid] for cid in cluster}
+                complexes.append(complex_chains)
+            
+            return complexes if len(complexes) > 1 else [chain_info]
+        
+        except Exception as e:
+            if self.verbose:
+                print(f"Spatial clustering failed: {e}, falling back to single complex")
+            return [chain_info]
+    
+    def _classify_multiple_complexes(self, complexes: List[Dict]) -> Dict[str, str]:
+        """
+        Classify chains within multiple complexes.
+        
+        Args:
+            complexes: List of dictionaries, each containing chains for one complex
+            
+        Returns:
+            Dictionary mapping all chain IDs to their types
+        """
+        all_assignments = {}
+        
+        for i, complex_chains in enumerate(complexes):
+            if self.verbose:
+                print(f"\nClassifying Complex {i+1} ({len(complex_chains)} chains):")
+                for chain_id, info in complex_chains.items():
+                    print(f"  Chain {chain_id}: {len(info['sequence'])} residues")
+            
+            # Classify this complex
+            complex_assignments = self._classify_chains(complex_chains)
+            
+            # Add complex number to chain assignments only if multiple complexes
+            for chain_id, chain_type in complex_assignments.items():
+                if len(complexes) > 1:
+                    # Multiple complexes - add complex number
+                    if chain_type != 'unknown':
+                        all_assignments[chain_id] = f"{chain_type}_complex{i+1}"
+                    else:
+                        all_assignments[chain_id] = 'unknown'
+                else:
+                    # Single complex - use original names
+                    all_assignments[chain_id] = chain_type
+        
+        return all_assignments
     
     def _validate_assignments(self, assignments: Dict[str, str], 
                             chain_info: Dict) -> Dict[str, str]:

@@ -150,8 +150,13 @@ TITLE     MOCK PHLA-TCR COMPLEX
             # Should have 5 chains
             self.assertEqual(len(result), 5)
             
-            # Check that we have all expected chain types
-            chain_types = set(result.values())
+            # Check that we have all expected chain types (with or without complex numbers)
+            chain_types = set()
+            for chain_type in result.values():
+                # Remove complex numbers (e.g., "peptide_complex1" -> "peptide")
+                base_type = chain_type.split('_complex')[0] if '_complex' in chain_type else chain_type
+                chain_types.add(base_type)
+            
             expected_types = {'peptide', 'b2m', 'mhc_heavy', 'tcr_alpha', 'tcr_beta'}
             
             # At least 3 of the 5 expected types should be identified

@@ -79,3 +79,6 @@ example_*.pdb
 benchmark_results.json
 *_report.txt
 sample_complex.pdb
+
+# Reference files (not part of main project)
+anarci.py

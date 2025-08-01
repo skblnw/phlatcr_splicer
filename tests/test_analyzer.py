@@ -8,7 +8,9 @@ This script provides test cases and validation for the analyzer.
 import unittest
 import tempfile
 import os
-from phlatcr_analyzer import pHLATCRAnalyzer
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from phlatcr_splicer import pHLATCRAnalyzer
 
 
 class TestpHLATCRAnalyzer(unittest.TestCase):

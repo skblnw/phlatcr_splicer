@@ -11,7 +11,10 @@ import sys
 import time
 import json
 from collections import defaultdict
-from phlatcr_analyzer import pHLATCRAnalyzer
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from phlatcr_splicer import pHLATCRAnalyzer
 
 
 class AnalyzerBenchmark:

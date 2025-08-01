@@ -6,6 +6,29 @@
 
 A Python tool for analyzing protein complex structure PDB files, specifically designed for pHLA-TCR complexes. This tool automatically identifies and classifies protein chains even when chain IDs are inconsistent or non-standard.
 
+## 🗂️ Repository Structure
+
+```
+phlatcr_splicer/
+├── 📦 phlatcr_splicer/          # Main package
+│   ├── __init__.py
+│   └── analyzer.py              # Core analyzer class
+├── 🧪 tests/                    # Test suite
+│   ├── test_analyzer.py         # Unit tests
+│   └── benchmark_analyzer.py    # Performance benchmarks
+├── 📖 docs/                     # Documentation
+│   ├── USER_GUIDE.md
+│   ├── API_REFERENCE.md
+│   ├── CONTRIBUTING.md
+│   └── CHANGELOG.md
+├── 💡 examples/                 # Usage examples
+│   └── example_usage.py
+├── ⚙️  setup.py                  # Package setup
+├── 📋 requirements.txt          # Dependencies
+├── 📄 MANIFEST.in              # Package manifest
+└── 📜 LICENSE                   # BSD-3 License
+```
+
 ## 🧬 What it does
 
 The analyzer identifies five key components in pHLA-TCR complexes:
@@ -19,20 +42,29 @@ The analyzer identifies five key components in pHLA-TCR complexes:
 ## ⚡ Quick Start
 
 ### Installation
+
+#### From source
 ```bash
 git clone https://github.com/yourusername/phlatcr_splicer.git
 cd phlatcr_splicer
-pip install -r requirements.txt
+pip install -e .
+```
+
+#### Using pip (when published)
+```bash
+pip install phlatcr-splicer
 ```
 
 ### Command Line Usage
 ```bash
-python phlatcr_analyzer.py your_complex.pdb
+phlatcr-analyze your_complex.pdb
+# or
+python -m phlatcr_splicer.analyzer your_complex.pdb
 ```
 
 ### Python API
 ```python
-from phlatcr_analyzer import pHLATCRAnalyzer
+from phlatcr_splicer import pHLATCRAnalyzer
 
 analyzer = pHLATCRAnalyzer()
 result = analyzer.analyze_pdb("complex.pdb")
@@ -61,17 +93,17 @@ The analyzer uses multiple approaches for robust chain identification:
 
 ## 📖 Documentation
 
-- **[User Guide](USER_GUIDE.md)**: Comprehensive usage instructions
-- **[API Reference](API_REFERENCE.md)**: Detailed API documentation
-- **[Examples](example_usage.py)**: Usage examples and tutorials
-- **[Contributing](CONTRIBUTING.md)**: Development guidelines
+- **[User Guide](docs/USER_GUIDE.md)**: Comprehensive usage instructions
+- **[API Reference](docs/API_REFERENCE.md)**: Detailed API documentation
+- **[Examples](examples/example_usage.py)**: Usage examples and tutorials
+- **[Contributing](docs/CONTRIBUTING.md)**: Development guidelines
 
 ## 🚀 Advanced Usage
 
 ### Batch Processing
 ```python
 import glob
-from phlatcr_analyzer import pHLATCRAnalyzer
+from phlatcr_splicer import pHLATCRAnalyzer
 
 analyzer = pHLATCRAnalyzer(verbose=False)
 for pdb_file in glob.glob("*.pdb"):
@@ -81,6 +113,8 @@ for pdb_file in glob.glob("*.pdb"):
 
 ### Custom Analysis
 ```python
+from phlatcr_splicer import pHLATCRAnalyzer
+
 class MyAnalyzer(pHLATCRAnalyzer):
     def analyze_with_confidence(self, pdb_file):
         assignments = self.analyze_pdb(pdb_file)
@@ -90,20 +124,23 @@ class MyAnalyzer(pHLATCRAnalyzer):
 
 ### Save Detailed Reports
 ```bash
-python phlatcr_analyzer.py -v -o detailed_report.txt complex.pdb
+phlatcr-analyze -v -o detailed_report.txt complex.pdb
 ```
 
 ## 🧪 Testing
 
 ```bash
 # Run unit tests
-python test_analyzer.py
+python -m pytest tests/
+
+# Or run individual test files
+python tests/test_analyzer.py
 
 # Run benchmarks
-python benchmark_analyzer.py
+python tests/benchmark_analyzer.py
 
 # Test examples
-python example_usage.py
+python examples/example_usage.py
 ```
 
 ## 📋 Requirements
@@ -116,7 +153,7 @@ python example_usage.py
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+We welcome contributions! Please see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for guidelines.
 
 1. Fork the repository
 2. Create a feature branch
@@ -143,8 +180,8 @@ If you use this tool in your research, please cite:
 ## 📞 Support
 
 - **Issues**: [GitHub Issues](https://github.com/yourusername/phlatcr_splicer/issues)
-- **Documentation**: [User Guide](USER_GUIDE.md)
-- **Examples**: [example_usage.py](example_usage.py)
+- **Documentation**: [User Guide](docs/USER_GUIDE.md)
+- **Examples**: [examples/example_usage.py](examples/example_usage.py)
 
 ## 🔮 Future Plans
 

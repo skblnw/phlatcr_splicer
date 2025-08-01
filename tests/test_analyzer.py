@@ -29,15 +29,15 @@ class TestpHLATCRAnalyzer(unittest.TestCase):
     
     def test_tcr_scoring(self):
         """Test TCR scoring functions."""
-        # Mock sequence for TCR alpha
-        alpha_seq = "EVQLVESGGGLVQPGGSLRLSCAASGFTFSSYGMHWVRQAPGKGLEWVAVISYDGSNKYYADSVKGRFTISRDNSKNTVYLQMNSLRAEDTAVYYCAKFGXGTQLTVSS"
+        # Mock sequence for TCR alpha (based on real patterns)
+        alpha_seq = "QLLEQSPQFLSIQEGENLTVYCNSSSVFSSLQWYRQEPGEGPVLLVTVVT" + "A" * 150  # 200 residues
         alpha_score = self.analyzer._score_tcr_alpha(alpha_seq, len(alpha_seq))
-        self.assertGreater(alpha_score, 0)
+        self.assertGreater(alpha_score, 0.5)
         
-        # Mock sequence for TCR beta
-        beta_seq = "MGIGVTQTPKFQVLKTGQSMTLQCAQDMNHEYMSWYRQDPGMGLRLIHYSVGAGTDKGEVPNPFDSAQGVKLISEDGYDYICHFFGTGTRLTVLEDLKNV"
+        # Mock sequence for TCR beta (based on real patterns)  
+        beta_seq = "GITQSPKYLFRKEGQNVTLSCEQNLNHDAMYWYRQDPGQGLRLIYYSQIV" + "B" * 190  # 240 residues
         beta_score = self.analyzer._score_tcr_beta(beta_seq, len(beta_seq))
-        self.assertGreater(beta_score, 0)
+        self.assertGreater(beta_score, 0.5)
     
     def test_chain_patterns(self):
         """Test pattern loading."""

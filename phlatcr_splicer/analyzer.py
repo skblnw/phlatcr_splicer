@@ -72,28 +72,36 @@ class pHLATCRAnalyzer:
         """Load TCR alpha and beta chain patterns."""
         return {
             'alpha': {
-                'length_range': (200, 250),
+                'length_range': (180, 230),  # Alpha chains are typically shorter
+                'optimal_length': (190, 220),
                 'conserved_motifs': [
                     'FGXGT',    # CDR3 C-terminal
                     'WYQQKP',   # Framework regions
                     'YKFK',     # Framework 1
                     'TLTIS',    # Framework 3
+                    'QLLE',     # Common N-terminal for alpha
+                    'SPQFL',    # Alpha-specific pattern
                 ],
                 'v_gene_patterns': ['TRAV', 'TCRAV'],
                 'j_gene_patterns': ['TRAJ', 'TCRAJ'],
                 'cdr3_patterns': ['CAS', 'CAV', 'CAI'],  # Common CDR3 starts
+                'n_terminal_patterns': ['QLLE', 'QVQL', 'EVQL'],  # Alpha N-terminal
             },
             'beta': {
-                'length_range': (240, 290),
+                'length_range': (230, 290),  # Beta chains are typically longer
+                'optimal_length': (240, 280),
                 'conserved_motifs': [
                     'FGGGT',    # CDR3 C-terminal
                     'WYQQKP',   # Framework regions
                     'MGIGV',    # Framework 1
                     'SVGD',     # Framework 2
+                    'GITQ',     # Common N-terminal for beta
+                    'SPKYL',    # Beta-specific pattern
                 ],
                 'v_gene_patterns': ['TRBV', 'TCRBV'],
                 'j_gene_patterns': ['TRBJ', 'TCRBJ'],
                 'cdr3_patterns': ['CAS', 'CAW', 'CAT'],  # Common CDR3 starts
+                'n_terminal_patterns': ['GITQ', 'MGIT', 'GVTQ'],  # Beta N-terminal
             }
         }
     
@@ -258,18 +266,48 @@ class pHLATCRAnalyzer:
         sorted_chains = sorted(chain_info.items(), 
                              key=lambda x: x[1]['length'], reverse=True)
         
+        # First pass: calculate scores for all chain types
+        chain_scores = {}
         for chain_id, info in sorted_chains:
             sequence = info['sequence']
             length = info['length']
             properties = info['properties']
             
-            # Classification logic
-            chain_type = self._determine_chain_type(
-                sequence, length, properties, used_types
-            )
+            scores = {}
+            scores['peptide'] = self._score_peptide(sequence, length, properties)
+            scores['b2m'] = self._score_b2m(sequence, length, properties)
+            scores['mhc_heavy'] = self._score_mhc(sequence, length, properties)
+            scores['tcr_alpha'] = self._score_tcr_alpha(sequence, length)
+            scores['tcr_beta'] = self._score_tcr_beta(sequence, length)
             
-            assignments[chain_id] = chain_type
-            used_types.add(chain_type)
+            chain_scores[chain_id] = scores
+        
+        # Second pass: assign based on best unique matches
+        used_types = set()
+        for chain_id, info in sorted_chains:
+            sequence = info['sequence']
+            length = info['length']
+            properties = info['properties']
+            
+            # Get scores for this chain
+            scores = chain_scores[chain_id]
+            
+            # Find the best available type
+            available_scores = {ctype: score for ctype, score in scores.items() 
+                              if ctype not in used_types}
+            
+            if available_scores:
+                best_type = max(available_scores.items(), key=lambda x: x[1])
+                if best_type[1] > 0.3:  # Minimum confidence threshold
+                    assignments[chain_id] = best_type[0]
+                    used_types.add(best_type[0])
+                else:
+                    # Fallback to length-based assignment
+                    chain_type = self._fallback_assignment(length, used_types)
+                    assignments[chain_id] = chain_type
+                    used_types.add(chain_type)
+            else:
+                assignments[chain_id] = 'unknown'
         
         # Post-process to ensure we have reasonable assignments
         assignments = self._validate_assignments(assignments, chain_info)
@@ -365,19 +403,34 @@ class pHLATCRAnalyzer:
         """Score likelihood of being MHC heavy chain."""
         score = 0.0
         
-        # Length check
+        # Strong length preference for MHC
         mhc_range = self.mhc_patterns['length_range']
         if mhc_range[0] <= length <= mhc_range[1]:
-            score += 0.4
+            score += 0.6  # Higher weight for correct length
+            # Extra bonus for typical MHC length
+            if 270 <= length <= 280:
+                score += 0.3
+        elif length < 250:
+            # Strong penalty for being too short (can't be MHC)
+            score -= 0.5
         
-        # Check conserved motifs
+        # Check conserved motifs with higher weight
         motif_score = sum(1 for motif in self.mhc_patterns['conserved_motifs'] 
                          if motif in sequence)
-        score += motif_score * 0.12
+        score += motif_score * 0.15
         
-        # MHC heavy chains are typically the longest in the complex
-        if length > 300:
-            score += 0.2
+        # MHC-specific N-terminal patterns
+        n_terminal = sequence[:30] if len(sequence) >= 30 else sequence
+        if any(pattern in n_terminal for pattern in ['GSHSMRY', 'GSHSMR']):
+            score += 0.4  # Strong MHC indicator
+        
+        # MHC heavy chains should NOT have TCR patterns
+        # Penalty for TCR-like patterns
+        tcr_beta_patterns = self.tcr_patterns['beta']['n_terminal_patterns']
+        tcr_alpha_patterns = self.tcr_patterns['alpha']['n_terminal_patterns']
+        
+        if any(pattern in n_terminal for pattern in tcr_beta_patterns + tcr_alpha_patterns):
+            score -= 0.4  # Strong penalty for TCR patterns
         
         # Check for cysteine residues at expected positions
         cys_score = 0
@@ -386,7 +439,11 @@ class pHLATCRAnalyzer:
                 cys_score += 1
         score += (cys_score / len(self.mhc_patterns['disulfide_cysteines'])) * 0.2
         
-        return min(score, 1.0)
+        # MHC chains are typically the longest protein in pHLA-TCR complexes
+        if length > 270:
+            score += 0.2
+        
+        return min(max(score, 0.0), 1.0)
     
     def _fallback_assignment(self, length: int, used_types: Set) -> str:
         """Fallback assignment based on length when scoring fails."""
@@ -407,66 +464,97 @@ class pHLATCRAnalyzer:
         """Score likelihood of being TCR alpha chain."""
         score = 0.0
         
-        # Length check
+        # Length check with stronger discrimination
         alpha_range = self.tcr_patterns['alpha']['length_range']
+        optimal_range = self.tcr_patterns['alpha']['optimal_length']
+        
         if alpha_range[0] <= length <= alpha_range[1]:
-            score += 0.3
+            score += 0.4
+            # Bonus for optimal length range
+            if optimal_range[0] <= length <= optimal_range[1]:
+                score += 0.2
+        elif length > alpha_range[1]:
+            # Penalty for being too long (likely beta)
+            score -= 0.3
+        
+        # N-terminal patterns (very distinctive for alpha)
+        n_terminal = sequence[:20] if len(sequence) >= 20 else sequence
+        n_patterns = self.tcr_patterns['alpha']['n_terminal_patterns']
+        for pattern in n_patterns:
+            if pattern in n_terminal:
+                score += 0.3
+                break
         
         # Motif checks
         motifs = self.tcr_patterns['alpha']['conserved_motifs']
         motif_count = sum(1 for motif in motifs if motif in sequence)
-        score += motif_count * 0.15
+        score += motif_count * 0.12
         
         # CDR3 patterns
         cdr3_patterns = self.tcr_patterns['alpha']['cdr3_patterns']
         cdr3_count = sum(1 for pattern in cdr3_patterns if pattern in sequence)
-        score += cdr3_count * 0.1
+        score += cdr3_count * 0.08
         
         # TCR-specific C-terminal patterns
         c_terminal = sequence[-20:] if len(sequence) >= 20 else sequence
-        if any(pattern in c_terminal for pattern in ['FGXGT', 'FGGGT', 'FGAGT', 'FGQGT']):
-            score += 0.25
+        if any(pattern in c_terminal for pattern in ['FGXGT', 'FGAGT', 'FGQGT']):
+            score += 0.2
         
-        # TCR alpha chains typically shorter than beta
-        if 200 <= length <= 240:
-            score += 0.1
+        # Strong preference for shorter chains (alpha characteristic)
+        if length < 220:
+            score += 0.2
+        elif length > 250:
+            score -= 0.4  # Strong penalty for long chains
         
-        return min(score, 1.0)
+        return min(max(score, 0.0), 1.0)
     
     def _score_tcr_beta(self, sequence: str, length: int) -> float:
         """Score likelihood of being TCR beta chain."""
         score = 0.0
         
-        # Length check
+        # Length check with stronger discrimination
         beta_range = self.tcr_patterns['beta']['length_range']
+        optimal_range = self.tcr_patterns['beta']['optimal_length']
+        
         if beta_range[0] <= length <= beta_range[1]:
-            score += 0.3
+            score += 0.4
+            # Bonus for optimal length range
+            if optimal_range[0] <= length <= optimal_range[1]:
+                score += 0.2
+        elif length < beta_range[0]:
+            # Penalty for being too short (likely alpha)
+            score -= 0.3
+        
+        # N-terminal patterns (very distinctive for beta)
+        n_terminal = sequence[:20] if len(sequence) >= 20 else sequence
+        n_patterns = self.tcr_patterns['beta']['n_terminal_patterns']
+        for pattern in n_patterns:
+            if pattern in n_terminal:
+                score += 0.3
+                break
         
         # Motif checks
         motifs = self.tcr_patterns['beta']['conserved_motifs']
         motif_count = sum(1 for motif in motifs if motif in sequence)
-        score += motif_count * 0.15
+        score += motif_count * 0.12
         
         # CDR3 patterns
         cdr3_patterns = self.tcr_patterns['beta']['cdr3_patterns']
         cdr3_count = sum(1 for pattern in cdr3_patterns if pattern in sequence)
-        score += cdr3_count * 0.1
+        score += cdr3_count * 0.08
         
         # TCR-specific C-terminal patterns
         c_terminal = sequence[-20:] if len(sequence) >= 20 else sequence
         if any(pattern in c_terminal for pattern in ['FGGGT', 'FGQGT', 'FGPGT']):
-            score += 0.25
+            score += 0.2
         
-        # TCR beta tends to be longer than alpha
-        if length > 250:
-            score += 0.15
+        # Strong preference for longer chains (beta characteristic)
+        if length > 240:
+            score += 0.2
+        elif length < 220:
+            score -= 0.4  # Strong penalty for short chains
         
-        # Beta-specific N-terminal patterns
-        n_terminal = sequence[:20] if len(sequence) >= 20 else sequence
-        if any(pattern in n_terminal for pattern in ['MGIGV', 'MDSGL']):
-            score += 0.15
-        
-        return min(score, 1.0)
+        return min(max(score, 0.0), 1.0)
     
     def _validate_assignments(self, assignments: Dict[str, str], 
                             chain_info: Dict) -> Dict[str, str]:

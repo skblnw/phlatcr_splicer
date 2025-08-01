@@ -149,8 +149,9 @@ class pHLATCRAnalyzer:
         
         if self.verbose:
             print("\nChain assignments:")
-            for chain_id, chain_type in chain_assignments.items():
-                print(f"  Chain {chain_id}: {chain_type}")
+            # Sort by chain ID for consistent output
+            for chain_id in sorted(chain_assignments.keys()):
+                print(f"  Chain {chain_id}: {chain_assignments[chain_id]}")
         
         return chain_assignments
     

@@ -620,7 +620,9 @@ class pHLATCRAnalyzer:
             f.write("pHLA-TCR Complex Analysis Report\n")
             f.write("=" * 40 + "\n\n")
             
-            for chain_id, chain_type in assignments.items():
+            # Sort by chain ID for consistent output
+            for chain_id in sorted(assignments.keys()):
+                chain_type = assignments[chain_id]
                 f.write(f"Chain {chain_id}: {chain_type}\n")
                 
                 if chain_info and chain_id in chain_info:
@@ -651,11 +653,11 @@ def main():
         # Analyze the PDB file
         assignments = analyzer.analyze_pdb(args.pdb_file)
         
-        # Print results
+        # Print results in alphabetical order
         print("\nFinal Chain Assignments:")
         print("-" * 30)
-        for chain_id, chain_type in assignments.items():
-            print(f"Chain {chain_id}: {chain_type}")
+        for chain_id in sorted(assignments.keys()):
+            print(f"Chain {chain_id}: {assignments[chain_id]}")
         
         # Save report if requested
         if args.output:

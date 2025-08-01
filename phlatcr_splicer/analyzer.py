@@ -51,13 +51,39 @@ class pHLATCRAnalyzer:
     def _load_mhc_patterns(self) -> Dict:
         """Load MHC class I heavy chain patterns and characteristics."""
         return {
-            'length_range': (270, 380),  # Typical length range
+            'length_range': (260, 380),  # Typical length range
+            'optimal_length': (265, 285),  # Most common MHC heavy chain lengths
+            'highly_specific_motifs': [
+                'GSHSMR',    # Very specific MHC Heavy N-terminal
+                'GSHSM',     # Highly specific MHC marker
+                'YFYTS',     # Alpha1 domain signature
+                'YFYT',      # Variant of above
+                'MRYFYT',    # Extended N-terminal pattern
+                'RYFYTS',    # Extended pattern
+            ],
             'conserved_motifs': [
-                'GSHSMRY',  # Alpha1 domain motif
                 'WSDRVI',   # Alpha2 domain motif
                 'FKAFLKQ',  # Alpha3 domain motif
                 'TGAASC',   # Common motif
                 'RGEC',     # Additional pattern
+                'ASSPRE',   # Found in many MHC sequences
+                'EPRAP',    # N-terminal region pattern
+            ],
+            'n_terminal_signatures': [
+                'GSHSMR',    # Most specific
+                'GSHSM',     # Highly specific
+                'SHSMR',     # Variant
+                'HSMRY',     # Variant
+            ],
+            'c_terminal_patterns': [
+                'KWAAV',     # C-terminal pattern
+                'WAAVV',     # C-terminal variant
+                'TQIVSAE',   # C-terminal signature
+            ],
+            'anti_tcr_patterns': [  # Patterns that rule out TCR
+                'GSHSM',     # Never in TCR
+                'YFYTS',     # Never in TCR
+                'EPRAP',     # MHC-specific
             ],
             'domain_boundaries': {
                 'alpha1': (1, 90),
@@ -74,6 +100,13 @@ class pHLATCRAnalyzer:
             'alpha': {
                 'length_range': (180, 230),  # Alpha chains are typically shorter
                 'optimal_length': (190, 220),
+                'highly_specific_motifs': [
+                    'WYQQFP',    # Very specific TCR alpha pattern
+                    'WYQQ',      # Alpha-specific framework
+                    'TNDYIT',    # Alpha V-region pattern
+                    'QPISMDS',   # Alpha N-terminal pattern
+                    'LAKTTQ',    # Specific alpha start
+                ],
                 'conserved_motifs': [
                     'FGXGT',    # CDR3 C-terminal
                     'WYQQKP',   # Framework regions
@@ -81,15 +114,24 @@ class pHLATCRAnalyzer:
                     'TLTIS',    # Framework 3
                     'QLLE',     # Common N-terminal for alpha
                     'SPQFL',    # Alpha-specific pattern
+                    'DSYEG',    # Alpha framework
                 ],
                 'v_gene_patterns': ['TRAV', 'TCRAV'],
                 'j_gene_patterns': ['TRAJ', 'TCRAJ'],
                 'cdr3_patterns': ['CAS', 'CAV', 'CAI'],  # Common CDR3 starts
-                'n_terminal_patterns': ['QLLE', 'QVQL', 'EVQL'],  # Alpha N-terminal
+                'n_terminal_patterns': ['QLLE', 'QVQL', 'EVQL', 'LAKTTQ'],  # Alpha N-terminal
+                'c_terminal_patterns': ['FGXGT', 'FGAGT', 'FGQGT', 'FPSSP'],
             },
             'beta': {
                 'length_range': (230, 290),  # Beta chains are typically longer
                 'optimal_length': (240, 280),
+                'highly_specific_motifs': [
+                    'VKVTQS',    # Very specific beta N-terminal
+                    'SSRYLV',    # Beta framework pattern
+                    'LIYFSYD',   # Beta CDR2 region
+                    'RTGEKV',    # Beta V-region
+                    'YRQDPG',    # Beta framework
+                ],
                 'conserved_motifs': [
                     'FGGGT',    # CDR3 C-terminal
                     'WYQQKP',   # Framework regions
@@ -101,7 +143,8 @@ class pHLATCRAnalyzer:
                 'v_gene_patterns': ['TRBV', 'TCRBV'],
                 'j_gene_patterns': ['TRBJ', 'TCRBJ'],
                 'cdr3_patterns': ['CAS', 'CAW', 'CAT'],  # Common CDR3 starts
-                'n_terminal_patterns': ['GITQ', 'MGIT', 'GVTQ'],  # Beta N-terminal
+                'n_terminal_patterns': ['GITQ', 'MGIT', 'GVTQ', 'VKVTQ'],  # Beta N-terminal
+                'c_terminal_patterns': ['FGGGT', 'FGQGT', 'FGPGT', 'WTQDRA'],
             }
         }
     
@@ -518,42 +561,73 @@ class pHLATCRAnalyzer:
         optimal_range = self.tcr_patterns['beta']['optimal_length']
         
         if beta_range[0] <= length <= beta_range[1]:
-            score += 0.4
+            score += 0.5  # Strong length preference
             # Bonus for optimal length range
             if optimal_range[0] <= length <= optimal_range[1]:
-                score += 0.2
+                score += 0.3
         elif length < beta_range[0]:
             # Penalty for being too short (likely alpha)
+            score -= 0.4
+        elif length > beta_range[1]:
+            # Penalty for being too long (likely MHC)
             score -= 0.3
         
+        # Check for highly specific beta patterns
+        n_terminal = sequence[:30] if len(sequence) >= 30 else sequence
+        c_terminal = sequence[-30:] if len(sequence) >= 30 else sequence
+        
+        # Highly specific beta motifs
+        beta_specific_found = 0
+        for pattern in self.tcr_patterns['beta']['highly_specific_motifs']:
+            if pattern in sequence:
+                beta_specific_found += 1
+                score += 0.4  # High score for specific patterns
+        
+        # Multiple specific patterns = strong evidence
+        if beta_specific_found >= 2:
+            score += 0.4
+        
         # N-terminal patterns (very distinctive for beta)
-        n_terminal = sequence[:20] if len(sequence) >= 20 else sequence
         n_patterns = self.tcr_patterns['beta']['n_terminal_patterns']
         for pattern in n_patterns:
             if pattern in n_terminal:
-                score += 0.3
+                score += 0.35
                 break
         
-        # Motif checks
+        # C-terminal patterns
+        c_patterns = self.tcr_patterns['beta']['c_terminal_patterns']
+        for pattern in c_patterns:
+            if pattern in c_terminal:
+                score += 0.25
+                break
+        
+        # Regular motif checks
         motifs = self.tcr_patterns['beta']['conserved_motifs']
         motif_count = sum(1 for motif in motifs if motif in sequence)
-        score += motif_count * 0.12
+        score += motif_count * 0.1
         
         # CDR3 patterns
         cdr3_patterns = self.tcr_patterns['beta']['cdr3_patterns']
         cdr3_count = sum(1 for pattern in cdr3_patterns if pattern in sequence)
         score += cdr3_count * 0.08
         
-        # TCR-specific C-terminal patterns
-        c_terminal = sequence[-20:] if len(sequence) >= 20 else sequence
-        if any(pattern in c_terminal for pattern in ['FGGGT', 'FGQGT', 'FGPGT']):
-            score += 0.2
-        
         # Strong preference for longer chains (beta characteristic)
-        if length > 240:
+        if length > 230 and length < 290:
             score += 0.2
         elif length < 220:
-            score -= 0.4  # Strong penalty for short chains
+            score -= 0.5  # Strong penalty for short chains
+        elif length > 300:
+            score -= 0.6  # Very strong penalty for very long chains (likely MHC)
+        
+        # Penalty for MHC-specific patterns
+        mhc_anti_patterns = self.mhc_patterns.get('anti_tcr_patterns', [])
+        if any(pattern in sequence for pattern in mhc_anti_patterns):
+            score -= 0.8  # Strong penalty for MHC patterns
+        
+        # Penalty for alpha-specific patterns
+        alpha_specific = self.tcr_patterns['alpha']['highly_specific_motifs']
+        if any(pattern in sequence for pattern in alpha_specific):
+            score -= 0.6  # Penalty for alpha-specific patterns
         
         return min(max(score, 0.0), 1.0)
     

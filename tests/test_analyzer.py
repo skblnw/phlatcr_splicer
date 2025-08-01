@@ -72,45 +72,45 @@ TITLE     MOCK PHLA-TCR COMPLEX
             atom_num = 1
             for i, aa in enumerate(['TYR', 'LEU', 'GLN', 'PRO', 'ARG', 'TRP', 'TYR', 'PHE', 'VAL']):
                 x, y, z = 20.0 + i, 15.0, 10.0
-                pdb_content += f"ATOM  {atom_num:5d}  N   {aa} P{i+1:4d}      {x:8.3f}{y:8.3f}{z:8.3f}  1.00 20.00           N  \n"
+                pdb_content += f"ATOM  {atom_num:5d}  N   {aa} P{i+1:4d}    {x:8.3f}{y:8.3f}{z:8.3f}  1.00 20.00           N  \n"
                 atom_num += 1
-                pdb_content += f"ATOM  {atom_num:5d}  CA  {aa} P{i+1:4d}      {x+0.5:8.3f}{y+0.5:8.3f}{z+0.5:8.3f}  1.00 20.00           C  \n"
+                pdb_content += f"ATOM  {atom_num:5d}  CA  {aa} P{i+1:4d}    {x+0.5:8.3f}{y+0.5:8.3f}{z+0.5:8.3f}  1.00 20.00           C  \n"
                 atom_num += 1
             
             # Add β2m chain (chain B) - 99 residues (simplified)
             for i in range(99):
                 aa = 'ALA' if i % 2 == 0 else 'GLY'
                 x, y, z = 30.0 + i*0.1, 20.0, 15.0
-                pdb_content += f"ATOM  {atom_num:5d}  N   {aa} B{i+1:4d}      {x:8.3f}{y:8.3f}{z:8.3f}  1.00 20.00           N  \n"
+                pdb_content += f"ATOM  {atom_num:5d}  N   {aa} B{i+1:4d}    {x:8.3f}{y:8.3f}{z:8.3f}  1.00 20.00           N  \n"
                 atom_num += 1
-                pdb_content += f"ATOM  {atom_num:5d}  CA  {aa} B{i+1:4d}      {x+0.5:8.3f}{y+0.5:8.3f}{z+0.5:8.3f}  1.00 20.00           C  \n"
+                pdb_content += f"ATOM  {atom_num:5d}  CA  {aa} B{i+1:4d}    {x+0.5:8.3f}{y+0.5:8.3f}{z+0.5:8.3f}  1.00 20.00           C  \n"
                 atom_num += 1
             
             # Add MHC heavy chain (chain H) - 276 residues (simplified)
             for i in range(276):
                 aa = ['ALA', 'VAL', 'LEU', 'ILE'][i % 4]
                 x, y, z = 40.0 + i*0.1, 25.0, 20.0
-                pdb_content += f"ATOM  {atom_num:5d}  N   {aa} H{i+1:4d}      {x:8.3f}{y:8.3f}{z:8.3f}  1.00 20.00           N  \n"
+                pdb_content += f"ATOM  {atom_num:5d}  N   {aa} H{i+1:4d}    {x:8.3f}{y:8.3f}{z:8.3f}  1.00 20.00           N  \n"
                 atom_num += 1
-                pdb_content += f"ATOM  {atom_num:5d}  CA  {aa} H{i+1:4d}      {x+0.5:8.3f}{y+0.5:8.3f}{z+0.5:8.3f}  1.00 20.00           C  \n"
+                pdb_content += f"ATOM  {atom_num:5d}  CA  {aa} H{i+1:4d}    {x+0.5:8.3f}{y+0.5:8.3f}{z+0.5:8.3f}  1.00 20.00           C  \n"
                 atom_num += 1
             
             # Add TCR alpha chain (chain A) - 220 residues
             for i in range(220):
                 aa = ['SER', 'THR', 'ASN', 'GLN'][i % 4]
                 x, y, z = 50.0 + i*0.1, 30.0, 25.0
-                pdb_content += f"ATOM  {atom_num:5d}  N   {aa} A{i+1:4d}      {x:8.3f}{y:8.3f}{z:8.3f}  1.00 20.00           N  \n"
+                pdb_content += f"ATOM  {atom_num:5d}  N   {aa} A{i+1:4d}    {x:8.3f}{y:8.3f}{z:8.3f}  1.00 20.00           N  \n"
                 atom_num += 1
-                pdb_content += f"ATOM  {atom_num:5d}  CA  {aa} A{i+1:4d}      {x+0.5:8.3f}{y+0.5:8.3f}{z+0.5:8.3f}  1.00 20.00           C  \n"
+                pdb_content += f"ATOM  {atom_num:5d}  CA  {aa} A{i+1:4d}    {x+0.5:8.3f}{y+0.5:8.3f}{z+0.5:8.3f}  1.00 20.00           C  \n"
                 atom_num += 1
             
             # Add TCR beta chain (chain T) - 245 residues
             for i in range(245):
                 aa = ['GLU', 'ASP', 'LYS', 'ARG'][i % 4]
                 x, y, z = 60.0 + i*0.1, 35.0, 30.0
-                pdb_content += f"ATOM  {atom_num:5d}  N   {aa} T{i+1:4d}      {x:8.3f}{y:8.3f}{z:8.3f}  1.00 20.00           N  \n"
+                pdb_content += f"ATOM  {atom_num:5d}  N   {aa} T{i+1:4d}    {x:8.3f}{y:8.3f}{z:8.3f}  1.00 20.00           N  \n"
                 atom_num += 1
-                pdb_content += f"ATOM  {atom_num:5d}  CA  {aa} T{i+1:4d}      {x+0.5:8.3f}{y+0.5:8.3f}{z+0.5:8.3f}  1.00 20.00           C  \n"
+                pdb_content += f"ATOM  {atom_num:5d}  CA  {aa} T{i+1:4d}    {x+0.5:8.3f}{y+0.5:8.3f}{z+0.5:8.3f}  1.00 20.00           C  \n"
                 atom_num += 1
             
             pdb_content += "END\n"

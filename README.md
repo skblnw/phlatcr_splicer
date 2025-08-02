@@ -296,15 +296,5 @@ This project is licensed under the BSD-3-Clause License - see the [LICENSE](LICE
 
 ## Acknowledgments
 
-- Built with **BioPython** for robust PDB parsing
-- Inspired by structural immunology research
-- Supports both major MHC complex architectures
-
-## Citation
-
-If you use this tool in your research, please cite:
-
-```
-pHLA-TCR Splicer: A comprehensive tool for analyzing MHC-I and MHC-II 
-protein complex structures. https://github.com/yourusername/phlatcr_splicer
-```
+- Xi'an Jiaotong-Liverpool University (XJTLU) Summer Undergraduate Research Fellowship (SURF)
+- SURF Codes: 1335, 1415

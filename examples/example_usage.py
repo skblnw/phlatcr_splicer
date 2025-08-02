@@ -7,7 +7,7 @@ This script demonstrates how to use the analyzer with various types of input.
 
 import os
 import sys
-from phlatcr_analyzer import pMHCITCRAnalyzer
+from phlatcr_splicer import pMHCITCRAnalyzer
 
 
 def example_basic_usage():
@@ -175,7 +175,7 @@ END
    python phlatcr_analyzer.py -o report.txt your_complex.pdb
 
 4. In Python script:
-   from phlatcr_analyzer import pMHCITCRAnalyzer
+   from phlatcr_splicer import pMHCITCRAnalyzer
    analyzer = pMHCITCRAnalyzer()
    result = analyzer.analyze_pdb("your_complex.pdb")
 

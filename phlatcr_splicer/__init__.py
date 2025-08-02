@@ -6,7 +6,7 @@ specifically designed for pHLA-TCR complexes. This tool identifies
 and classifies protein chains even when chain IDs are inconsistent.
 """
 
-from .analyzer import pMHCITCRAnalyzer
+from .mhc_i_analyzer import pMHCITCRAnalyzer
 from .mhc_ii_analyzer import pMHCIITCRAnalyzer
 
 __all__ = ['pMHCITCRAnalyzer', 'pMHCIITCRAnalyzer']

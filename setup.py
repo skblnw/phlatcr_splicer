@@ -55,7 +55,7 @@ setup(
     entry_points={
         "console_scripts": [
             "phlatcr-splicer=scripts.main:main",                  # Main unified entry point
-            "phlatcr-analyze=phlatcr_splicer.analyzer:main",       # MHC-I specific
+            "phlatcr-analyze=phlatcr_splicer.mhc_i_analyzer:main", # MHC-I specific
             "mhc-ii-analyze=phlatcr_splicer.mhc_ii_analyzer:main", # MHC-II specific
         ],
     },

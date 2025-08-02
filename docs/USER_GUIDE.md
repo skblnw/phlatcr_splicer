@@ -52,7 +52,7 @@ python phlatcr_analyzer.py your_complex.pdb
 
 ### Basic Python usage:
 ```python
-from phlatcr_analyzer import pMHCITCRAnalyzer
+from phlatcr_splicer import pMHCITCRAnalyzer
 
 analyzer = pMHCITCRAnalyzer()
 result = analyzer.analyze_pdb("your_complex.pdb")
@@ -93,7 +93,7 @@ Options:
 
 ### Basic Analysis
 ```python
-from phlatcr_analyzer import pMHCITCRAnalyzer
+from phlatcr_splicer import pMHCITCRAnalyzer
 
 # Initialize analyzer
 analyzer = pMHCITCRAnalyzer(verbose=True)
@@ -109,7 +109,7 @@ for chain_id, chain_type in assignments.items():
 ### Batch Processing
 ```python
 import os
-from phlatcr_analyzer import pMHCITCRAnalyzer
+from phlatcr_splicer import pMHCITCRAnalyzer
 
 analyzer = pMHCITCRAnalyzer(verbose=False)
 results = {}
@@ -311,7 +311,7 @@ def analyze_contacts(pdb_file, assignments):
 
 ### Example 1: Single Complex Analysis
 ```python
-from phlatcr_analyzer import pMHCITCRAnalyzer
+from phlatcr_splicer import pMHCITCRAnalyzer
 
 # Analyze a single pHLA-TCR complex
 analyzer = pMHCITCRAnalyzer(verbose=True)
@@ -328,7 +328,7 @@ analyzer.save_analysis_report(result, "1ao7_analysis.txt")
 ### Example 2: Batch Processing with Error Handling
 ```python
 import glob
-from phlatcr_analyzer import pMHCITCRAnalyzer
+from phlatcr_splicer import pMHCITCRAnalyzer
 
 analyzer = pMHCITCRAnalyzer(verbose=False)
 
@@ -362,7 +362,7 @@ print(f"\nSummary: {successful} successful, {failed} failed")
 ### Example 3: Integration with Data Analysis
 ```python
 import pandas as pd
-from phlatcr_analyzer import pMHCITCRAnalyzer
+from phlatcr_splicer import pMHCITCRAnalyzer
 
 def analyze_complex_dataset(pdb_files):
     """Analyze a dataset of pHLA-TCR complexes."""

@@ -1,196 +1,273 @@
-# pHLA-TCR Complex Structure Analyzer
+# pHLA-TCR Splicer
 
-[![License: BSD-3](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
-[![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)
-[![BioPython](https://img.shields.io/badge/BioPython-1.79+-green.svg)](https://biopython.org/)
+A comprehensive Python tool for analyzing protein complex structures from PDB files, supporting both **MHC Class I** and **MHC Class II** complexes. The tool automatically identifies and classifies different chain types even when chain IDs are inconsistent across PDB files.
 
-A Python tool for analyzing protein complex structure PDB files, specifically designed for pHLA-TCR complexes. This tool automatically identifies and classifies protein chains even when chain IDs are inconsistent or non-standard.
+## ✨ Features
 
-## 🗂️ Repository Structure
+- **🔬 Dual Platform Support**: Analyze both MHC-I (pHLA-TCR) and MHC-II (pMHC-II-TCR) complexes
+- **🧠 Smart Auto-Detection**: Automatically detect complex type (MHC-I vs MHC-II)
+- **🎯 Advanced Pattern Recognition**: Uses sequence motifs, length analysis, and molecular properties
+- **⚡ Multi-Complex Support**: Handles PDB files with multiple complexes
+- **🛠️ Flexible Interface**: Command-line, Python API, and individual analyzer access
+- **📊 Detailed Reporting**: Confidence scores and comprehensive analysis reports
 
-```
-phlatcr_splicer/
-├── 📦 phlatcr_splicer/          # Main package
-│   ├── __init__.py
-│   └── analyzer.py              # Core analyzer class
-├── 🧪 tests/                    # Test suite
-│   ├── test_analyzer.py         # Unit tests
-│   └── benchmark_analyzer.py    # Performance benchmarks
-├── 📖 docs/                     # Documentation
-│   ├── USER_GUIDE.md
-│   ├── API_REFERENCE.md
-│   ├── CONTRIBUTING.md
-│   └── CHANGELOG.md
-├── 💡 examples/                 # Usage examples
-│   └── example_usage.py
-├── ⚙️  setup.py                  # Package setup
-├── 📋 requirements.txt          # Dependencies
-├── 📄 MANIFEST.in              # Package manifest
-└── 📜 LICENSE                   # BSD-3 License
-```
-
-## 🧬 What it does
-
-The analyzer identifies five key components in pHLA-TCR complexes:
-
-- **Peptide antigen** (8-15 residues): The presented antigen
-- **MHC heavy chain** (270-380 residues): Major histocompatibility complex class I heavy chain  
-- **β2-microglobulin** (95-105 residues): MHC light chain
-- **TCR alpha chain** (200-250 residues): T cell receptor alpha chain
-- **TCR beta chain** (240-290 residues): T cell receptor beta chain
-
-## ⚡ Quick Start
+## 🚀 Quick Start
 
 ### Installation
 
-#### From source
 ```bash
 git clone https://github.com/yourusername/phlatcr_splicer.git
 cd phlatcr_splicer
 pip install -e .
 ```
 
-#### Using pip (when published)
+### Basic Usage
+
 ```bash
-pip install phlatcr-splicer
+# Unified interface (recommended)
+python scripts/main.py --type mhc-i test_data/1oga.pdb
+python scripts/main.py --type mhc-ii test_data/4z7u.pdb
+python scripts/main.py --auto test_data/complex.pdb --verbose
+
+# Individual analyzers
+phlatcr-analyze test_data/1oga.pdb          # MHC-I specific
+mhc-ii-analyze test_data/4z7u.pdb           # MHC-II specific
 ```
 
-### Command Line Usage
+## 📚 Usage Options
+
+### 1. Unified Main Script (Recommended)
+
 ```bash
-phlatcr-analyze your_complex.pdb
-# or
-python -m phlatcr_splicer.analyzer your_complex.pdb
+# Specify analyzer type
+python scripts/main.py --type mhc-i input.pdb
+python scripts/main.py --type mhc-ii input.pdb
+
+# Auto-detect complex type
+python scripts/main.py --auto input.pdb --verbose
+
+# Save results to file
+python scripts/main.py --type mhc-i input.pdb --output results.txt
+
+# Help
+python scripts/main.py --help
 ```
 
-### Python API
-```python
-from phlatcr_splicer import pHLATCRAnalyzer
+### 2. Individual Console Commands
 
-analyzer = pHLATCRAnalyzer()
-result = analyzer.analyze_pdb("complex.pdb")
-
-# Example output: {'A': 'tcr_alpha', 'B': 'tcr_beta', 'H': 'mhc_heavy', 'L': 'b2m', 'P': 'peptide'}
-```
-
-## 🔬 How it works
-
-The analyzer uses multiple approaches for robust chain identification:
-
-1. **Length-based filtering**: Each chain type has characteristic length ranges
-2. **Sequence motif matching**: Conserved patterns specific to each protein type
-3. **Structural features**: Molecular weight, disulfide bonds, hydrophobicity
-4. **Confidence scoring**: Multiple criteria combined into confidence scores
-5. **Validation logic**: Prevents duplicate assignments and resolves conflicts
-
-## 📊 Features
-
-- **🎯 High accuracy**: >90% accuracy on benchmark datasets
-- **⚡ Fast**: <1 second analysis time for typical complexes
-- **🔧 Robust**: Handles modified sequences and engineering artifacts
-- **📈 Scalable**: Batch processing capabilities
-- **🐍 Pythonic**: Clean API with comprehensive error handling
-- **🧪 Well-tested**: Extensive test suite with mock PDB generation
-
-## 📖 Documentation
-
-- **[User Guide](docs/USER_GUIDE.md)**: Comprehensive usage instructions
-- **[API Reference](docs/API_REFERENCE.md)**: Detailed API documentation
-- **[Examples](examples/example_usage.py)**: Usage examples and tutorials
-- **[Contributing](docs/CONTRIBUTING.md)**: Development guidelines
-
-## 🚀 Advanced Usage
-
-### Batch Processing
-```python
-import glob
-from phlatcr_splicer import pHLATCRAnalyzer
-
-analyzer = pHLATCRAnalyzer(verbose=False)
-for pdb_file in glob.glob("*.pdb"):
-    result = analyzer.analyze_pdb(pdb_file)
-    print(f"{pdb_file}: {result}")
-```
-
-### Custom Analysis
-```python
-from phlatcr_splicer import pHLATCRAnalyzer
-
-class MyAnalyzer(pHLATCRAnalyzer):
-    def analyze_with_confidence(self, pdb_file):
-        assignments = self.analyze_pdb(pdb_file)
-        # Add custom logic here
-        return assignments
-```
-
-### Save Detailed Reports
 ```bash
-phlatcr-analyze -v -o detailed_report.txt complex.pdb
+# MHC-I analyzer
+phlatcr-analyze input.pdb --verbose
+
+# MHC-II analyzer  
+mhc-ii-analyze input.pdb --verbose
+```
+
+### 3. Python API
+
+```python
+from phlatcr_splicer import pHLATCRAnalyzer, pMHCIITCRAnalyzer
+
+# MHC-I Analysis
+mhc_i_analyzer = pHLATCRAnalyzer(verbose=True)
+mhc_i_results = mhc_i_analyzer.analyze_pdb("test_data/1oga.pdb")
+
+# MHC-II Analysis
+mhc_ii_analyzer = pMHCIITCRAnalyzer(verbose=True)
+mhc_ii_results = mhc_ii_analyzer.analyze_pdb("test_data/4z7u.pdb")
+
+print(mhc_i_results)
+# {'A': 'mhc_heavy', 'B': 'b2m', 'C': 'peptide', 'D': 'tcr_alpha', 'E': 'tcr_beta'}
+```
+
+## 🧬 Supported Complex Types
+
+### MHC Class I (pHLA-TCR)
+- **`mhc_heavy`**: MHC heavy chain (~270-380 residues)
+- **`b2m`**: β2-microglobulin (~99 residues)
+- **`peptide`**: Short peptides (8-11 residues)
+- **`tcr_alpha`**: TCR alpha chain (~180-230 residues)  
+- **`tcr_beta`**: TCR beta chain (~230-290 residues)
+
+### MHC Class II (pMHC-II-TCR)
+- **`mhc_ii_alpha`**: MHC-II alpha chain (~180-200 residues)
+- **`mhc_ii_beta`**: MHC-II beta chain (~190-210 residues)
+- **`peptide`**: Longer peptides (12-25 residues)
+- **`tcr_alpha`**: TCR alpha chain (~180-230 residues)
+- **`tcr_beta`**: TCR beta chain (~230-290 residues)
+
+## 📊 Example Results
+
+### MHC-I Complex (1oga.pdb)
+```bash
+python scripts/main.py --type mhc-i test_data/1oga.pdb
+```
+```
+🧬 Running MHC-I (pHLA-TCR) Analysis
+==================================================
+
+📊 Analysis Results for 1oga.pdb:
+----------------------------------------
+  Chain A: mhc_heavy
+  Chain B: b2m
+  Chain C: peptide
+  Chain D: tcr_alpha
+  Chain E: tcr_beta
+
+✅ Summary:
+  Total chains: 5
+  Identified: 5
+  Unknown: 0
+🎯 Perfect! All chains identified successfully.
+```
+
+### MHC-II Multi-Complex (4z7u.pdb)
+```bash
+python scripts/main.py --type mhc-ii test_data/4z7u.pdb
+```
+```
+🧬 Running MHC-II (pMHC-II-TCR) Analysis
+==================================================
+
+📊 Analysis Results for 4z7u.pdb:
+----------------------------------------
+  Chain A: mhc_ii_alpha_complex1
+  Chain B: mhc_ii_beta_complex1
+  Chain C: mhc_ii_alpha_complex2
+  Chain D: mhc_ii_beta_complex2
+  Chain E: tcr_alpha_complex1
+  Chain F: tcr_beta_complex1
+  Chain G: tcr_alpha_complex2
+  Chain H: tcr_beta_complex2
+  Chain I: peptide_complex1
+  Chain J: peptide_complex2
+
+✅ Summary:
+  Total chains: 10
+  Identified: 10
+  Unknown: 0
+🎯 Perfect! All chains identified successfully.
+```
+
+### Auto-Detection
+```bash
+python scripts/main.py --auto test_data/1oga.pdb --verbose
+```
+```
+🔍 Auto-detecting complex type...
+✅ Detected: MHC-I complex (β2-microglobulin detected)
+   MHC-I analysis: 5/5 chains identified
+   MHC-II analysis: 2/5 chains identified
+🧬 Running MHC-I (pHLA-TCR) Analysis
+...
 ```
 
 ## 🧪 Testing
 
 ```bash
-# Run unit tests
-python -m pytest tests/
+# Run all tests
+python -m pytest tests/ -v
 
-# Or run individual test files
-python tests/test_analyzer.py
+# Test individual analyzers
+python -m pytest tests/test_analyzer.py -v        # MHC-I tests
+python -m pytest tests/test_mhc_ii_analyzer.py -v # MHC-II tests
 
-# Run benchmarks
+# Benchmark performance
 python tests/benchmark_analyzer.py
-
-# Test examples
-python examples/example_usage.py
 ```
 
-## 📋 Requirements
+## 📁 Repository Structure
 
-- **Python 3.7+**
-- **BioPython ≥ 1.79**
-- **NumPy ≥ 1.21.0**
-- **SciPy ≥ 1.7.0**
-- **Pandas ≥ 1.3.0** (optional, for data analysis)
+```
+phlatcr_splicer/
+├── phlatcr_splicer/              # Main package
+│   ├── __init__.py               # Package initialization
+│   ├── analyzer.py               # MHC-I analyzer
+│   └── mhc_ii_analyzer.py        # MHC-II analyzer
+├── scripts/                      # Command-line scripts
+│   ├── __init__.py
+│   └── main.py                   # Unified main entry point
+├── tests/                        # Test suite
+│   ├── test_analyzer.py          # MHC-I tests
+│   ├── test_mhc_ii_analyzer.py   # MHC-II tests
+│   └── benchmark_analyzer.py     # Performance tests
+├── test_data/                    # Example PDB files
+│   ├── 1oga.pdb                  # MHC-I example
+│   ├── 4z7u.pdb                  # MHC-II example
+│   └── 8ye4.pdb                  # Multi-complex example
+├── examples/                     # Usage examples
+├── docs/                         # Documentation
+├── setup.py                      # Package installation
+├── requirements.txt              # Dependencies
+└── README.md                     # This file
+```
+
+## 🛠️ Algorithm Features
+
+### Enhanced Complex Detection
+- **Peptide-count based estimation** for reliable complex counting
+- **Spatial clustering** for structures with many chains
+- **Sophisticated pairing logic** understanding MHC-II α/β heterodimers
+
+### Advanced Pattern Recognition  
+- **Sequence motifs**: Highly specific patterns for each chain type
+- **Length profiles**: Characteristic size ranges with optimal zones
+- **Composition analysis**: Amino acid content scoring
+- **Process-of-elimination**: Fallback classification for difficult sequences
+
+### Multi-Complex Support
+- **Automatic detection** of multiple complexes in single PDB files
+- **Chain grouping** by spatial proximity and functional relationships
+- **Complex numbering** for clear result organization
+
+## 🎯 Installation & Setup
+
+### Dependencies
+
+- Python 3.7+
+- BioPython >= 1.79
+- NumPy >= 1.19.0
+
+### From Source
+
+```bash
+git clone https://github.com/yourusername/phlatcr_splicer.git
+cd phlatcr_splicer
+pip install -r requirements.txt
+pip install -e .
+```
+
+### Verify Installation
+
+```bash
+# Test package installation
+python -c "from phlatcr_splicer import pHLATCRAnalyzer, pMHCIITCRAnalyzer; print('✅ Package installed successfully!')"
+
+# Test command-line tools
+python scripts/main.py --help
+phlatcr-analyze --help
+mhc-ii-analyze --help
+```
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for guidelines.
+Please read [CONTRIBUTING.md](docs/CONTRIBUTING.md) for contribution guidelines.
 
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Submit a pull request
+## 📄 License
 
-## 📜 License
+This project is licensed under the BSD-3-Clause License - see the [LICENSE](LICENSE) file for details.
 
-This project is licensed under the BSD 3-Clause License - see the [LICENSE](LICENSE) file for details.
+## 🏆 Acknowledgments
 
-## 🏆 Citation
+- Built with **BioPython** for robust PDB parsing
+- Inspired by structural immunology research
+- Supports both major MHC complex architectures
+
+## 📝 Citation
 
 If you use this tool in your research, please cite:
 
-```bibtex
-@software{phlatcr_analyzer,
-  title={pHLA-TCR Complex Structure Analyzer},
-  author={Your Name},
-  year={2024},
-  url={https://github.com/yourusername/phlatcr_splicer}
-}
 ```
-
-## 📞 Support
-
-- **Issues**: [GitHub Issues](https://github.com/yourusername/phlatcr_splicer/issues)
-- **Documentation**: [User Guide](docs/USER_GUIDE.md)
-- **Examples**: [examples/example_usage.py](examples/example_usage.py)
-
-## 🔮 Future Plans
-
-- Machine learning-based classification
-- 3D structural analysis integration
-- Support for additional complex types
-- Web interface for online analysis
-- Integration with structure databases
-
----
-
-**Made with ❤️ for the structural biology community**
+pHLA-TCR Splicer: A comprehensive tool for analyzing MHC-I and MHC-II 
+protein complex structures. https://github.com/yourusername/phlatcr_splicer
+```

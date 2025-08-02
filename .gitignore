@@ -81,4 +81,5 @@ benchmark_results.json
 sample_complex.pdb
 
 # Reference files (not part of main project)
+# Reference files (no longer needed)
 anarci.py

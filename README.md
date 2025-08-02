@@ -2,16 +2,16 @@
 
 A comprehensive Python tool for analyzing protein complex structures from PDB files, supporting both **MHC Class I** and **MHC Class II** complexes. The tool automatically identifies and classifies different chain types even when chain IDs are inconsistent across PDB files.
 
-## ✨ Features
+## Features
 
-- **🔬 Dual Platform Support**: Analyze both MHC-I (pHLA-TCR) and MHC-II (pMHC-II-TCR) complexes
-- **🧠 Smart Auto-Detection**: Automatically detect complex type (MHC-I vs MHC-II)
-- **🎯 Advanced Pattern Recognition**: Uses sequence motifs, length analysis, and molecular properties
-- **⚡ Multi-Complex Support**: Handles PDB files with multiple complexes
-- **🛠️ Flexible Interface**: Command-line, Python API, and individual analyzer access
-- **📊 Detailed Reporting**: Confidence scores and comprehensive analysis reports
+- **Dual Platform Support**: Analyze both MHC-I (pHLA-TCR) and MHC-II (pMHC-II-TCR) complexes
+- **Smart Auto-Detection**: Automatically detect complex type (MHC-I vs MHC-II)
+- **Advanced Pattern Recognition**: Uses sequence motifs, length analysis, and molecular properties
+- **Multi-Complex Support**: Handles PDB files with multiple complexes
+- **Flexible Interface**: Command-line, Python API, and individual analyzer access
+- **Detailed Reporting**: Confidence scores and comprehensive analysis reports
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Installation
 
@@ -34,7 +34,7 @@ phlatcr-analyze test_data/1oga.pdb          # MHC-I specific
 mhc-ii-analyze test_data/4z7u.pdb           # MHC-II specific
 ```
 
-## 📚 Usage Options
+## Usage Options
 
 ### 1. Unified Main Script (Recommended)
 
@@ -80,7 +80,7 @@ print(mhc_i_results)
 # {'A': 'mhc_heavy', 'B': 'b2m', 'C': 'peptide', 'D': 'tcr_alpha', 'E': 'tcr_beta'}
 ```
 
-## 🧬 Supported Complex Types
+## Supported Complex Types
 
 ### MHC Class I (pHLA-TCR)
 - **`mhc_heavy`**: MHC heavy chain (~270-380 residues)
@@ -96,17 +96,17 @@ print(mhc_i_results)
 - **`tcr_alpha`**: TCR alpha chain (~180-230 residues)
 - **`tcr_beta`**: TCR beta chain (~230-290 residues)
 
-## 📊 Example Results
+## Example Results
 
 ### MHC-I Complex (1oga.pdb)
 ```bash
 python scripts/main.py --type mhc-i test_data/1oga.pdb
 ```
 ```
-🧬 Running MHC-I (pHLA-TCR) Analysis
+Running MHC-I (pHLA-TCR) Analysis
 ==================================================
 
-📊 Analysis Results for 1oga.pdb:
+Analysis Results for 1oga.pdb:
 ----------------------------------------
   Chain A: mhc_heavy
   Chain B: b2m
@@ -114,11 +114,11 @@ python scripts/main.py --type mhc-i test_data/1oga.pdb
   Chain D: tcr_alpha
   Chain E: tcr_beta
 
-✅ Summary:
+Summary:
   Total chains: 5
   Identified: 5
   Unknown: 0
-🎯 Perfect! All chains identified successfully.
+Perfect! All chains identified successfully.
 ```
 
 ### MHC-II Multi-Complex (4z7u.pdb)
@@ -126,10 +126,10 @@ python scripts/main.py --type mhc-i test_data/1oga.pdb
 python scripts/main.py --type mhc-ii test_data/4z7u.pdb
 ```
 ```
-🧬 Running MHC-II (pMHC-II-TCR) Analysis
+Running MHC-II (pMHC-II-TCR) Analysis
 ==================================================
 
-📊 Analysis Results for 4z7u.pdb:
+Analysis Results for 4z7u.pdb:
 ----------------------------------------
   Chain A: mhc_ii_alpha_complex1
   Chain B: mhc_ii_beta_complex1
@@ -142,11 +142,11 @@ python scripts/main.py --type mhc-ii test_data/4z7u.pdb
   Chain I: peptide_complex1
   Chain J: peptide_complex2
 
-✅ Summary:
+Summary:
   Total chains: 10
   Identified: 10
   Unknown: 0
-🎯 Perfect! All chains identified successfully.
+Perfect! All chains identified successfully.
 ```
 
 ### Auto-Detection
@@ -154,15 +154,15 @@ python scripts/main.py --type mhc-ii test_data/4z7u.pdb
 python scripts/main.py --auto test_data/1oga.pdb --verbose
 ```
 ```
-🔍 Auto-detecting complex type...
-✅ Detected: MHC-I complex (β2-microglobulin detected)
+Auto-detecting complex type...
+Detected: MHC-I complex (β2-microglobulin detected)
    MHC-I analysis: 5/5 chains identified
    MHC-II analysis: 2/5 chains identified
-🧬 Running MHC-I (pHLA-TCR) Analysis
+Running MHC-I (pHLA-TCR) Analysis
 ...
 ```
 
-## 🧪 Testing
+## Testing
 
 ```bash
 # Run all tests
@@ -176,13 +176,13 @@ python -m pytest tests/test_mhc_ii_analyzer.py -v # MHC-II tests
 python tests/benchmark_analyzer.py
 ```
 
-## 📁 Repository Structure
+## Repository Structure
 
 ```
 phlatcr_splicer/
 ├── phlatcr_splicer/              # Main package
 │   ├── __init__.py               # Package initialization
-│   ├── analyzer.py               # MHC-I analyzer
+│   ├── mhc_i_analyzer.py         # MHC-I analyzer
 │   └── mhc_ii_analyzer.py        # MHC-II analyzer
 ├── scripts/                      # Command-line scripts
 │   ├── __init__.py
@@ -202,7 +202,7 @@ phlatcr_splicer/
 └── README.md                     # This file
 ```
 
-## 🛠️ Algorithm Features
+## Algorithm Features
 
 ### Enhanced Complex Detection
 - **Peptide-count based estimation** for reliable complex counting
@@ -220,7 +220,7 @@ phlatcr_splicer/
 - **Chain grouping** by spatial proximity and functional relationships
 - **Complex numbering** for clear result organization
 
-## 🎯 Installation & Setup
+## Installation & Setup
 
 ### Dependencies
 
@@ -241,7 +241,7 @@ pip install -e .
 
 ```bash
 # Test package installation
-python -c "from phlatcr_splicer import pMHCITCRAnalyzer, pMHCIITCRAnalyzer; print('✅ Package installed successfully!')"
+python -c "from phlatcr_splicer import pMHCITCRAnalyzer, pMHCIITCRAnalyzer; print('Package installed successfully!')"
 
 # Test command-line tools
 python scripts/main.py --help
@@ -249,21 +249,21 @@ phlatcr-analyze --help
 mhc-ii-analyze --help
 ```
 
-## 🤝 Contributing
+## Contributing
 
 Please read [CONTRIBUTING.md](docs/CONTRIBUTING.md) for contribution guidelines.
 
-## 📄 License
+## License
 
 This project is licensed under the BSD-3-Clause License - see the [LICENSE](LICENSE) file for details.
 
-## 🏆 Acknowledgments
+## Acknowledgments
 
 - Built with **BioPython** for robust PDB parsing
 - Inspired by structural immunology research
 - Supports both major MHC complex architectures
 
-## 📝 Citation
+## Citation
 
 If you use this tool in your research, please cite:
 

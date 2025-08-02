@@ -6,6 +6,7 @@ A comprehensive Python tool for analyzing protein complex structures from PDB fi
 
 - **Dual Platform Support**: Analyze both MHC-I (pHLA-TCR) and MHC-II (pMHC-II-TCR) complexes
 - **Smart Auto-Detection**: Automatically detect complex type (MHC-I vs MHC-II)
+- **Batch Processing**: Analyze multiple PDB files at once with summary statistics
 - **Advanced Pattern Recognition**: Uses sequence motifs, length analysis, and molecular properties
 - **Multi-Complex Support**: Handles PDB files with multiple complexes
 - **Flexible Interface**: Command-line, Python API, and individual analyzer access
@@ -24,10 +25,14 @@ pip install -e .
 ### Basic Usage
 
 ```bash
-# Unified interface (recommended)
+# Single file analysis
 python scripts/main.py --type mhc-i test_data/1oga.pdb
 python scripts/main.py --type mhc-ii test_data/4z7u.pdb
 python scripts/main.py --auto test_data/complex.pdb --verbose
+
+# Batch processing (multiple files)
+python scripts/main.py --type mhc-i *.pdb --batch-summary
+python scripts/main.py --auto file1.pdb file2.pdb file3.pdb --output results.txt
 
 # Individual analyzers
 phlatcr-analyze test_data/1oga.pdb          # MHC-I specific
@@ -39,12 +44,15 @@ mhc-ii-analyze test_data/4z7u.pdb           # MHC-II specific
 ### 1. Unified Main Script (Recommended)
 
 ```bash
-# Specify analyzer type
+# Single file analysis
 python scripts/main.py --type mhc-i input.pdb
 python scripts/main.py --type mhc-ii input.pdb
-
-# Auto-detect complex type
 python scripts/main.py --auto input.pdb --verbose
+
+# Batch processing multiple files
+python scripts/main.py --type mhc-i file1.pdb file2.pdb file3.pdb
+python scripts/main.py --auto *.pdb --batch-summary
+python scripts/main.py --type mhc-ii complexes/*.pdb --output batch_results.txt
 
 # Save results to file
 python scripts/main.py --type mhc-i input.pdb --output results.txt
@@ -147,6 +155,35 @@ Summary:
   Identified: 10
   Unknown: 0
 Perfect! All chains identified successfully.
+```
+
+### Batch Processing
+
+```bash
+python scripts/main.py --type mhc-i test_data/1oga.pdb test_data/1mi5.pdb --batch-summary
+```
+```
+Running Batch Analysis
+==================================================
+Files to process: 2
+
+Processing 1/2: 1oga.pdb
+   ✅ 5/5 chains identified
+
+Processing 2/2: 1mi5.pdb  
+   ✅ 5/5 chains identified
+
+Batch Analysis Summary
+==============================
+Total files processed: 2
+Successful analyses: 2
+Failed analyses: 0
+Total chains: 10
+Identified chains: 10
+Unknown chains: 0
+Identification rate: 100.0%
+
+Batch analysis completed successfully!
 ```
 
 ### Auto-Detection

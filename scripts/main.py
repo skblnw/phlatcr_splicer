@@ -160,7 +160,7 @@ def run_analysis(analyzer_type: str, pdb_file: str, verbose: bool = False, outpu
         
         # Save to file if requested
         if output_file:
-            save_results_to_file(results, pdb_file, analyzer_name, output_file, verbose)
+            save_results_to_file(results, pdb_file, analyzer_name, output_file, verbose, append=False)
         
         return results
         
@@ -172,10 +172,11 @@ def run_analysis(analyzer_type: str, pdb_file: str, verbose: bool = False, outpu
         sys.exit(1)
 
 
-def save_results_to_file(results: dict, pdb_file: str, analyzer_name: str, output_file: str, verbose: bool = False):
+def save_results_to_file(results: dict, pdb_file: str, analyzer_name: str, output_file: str, verbose: bool = False, append: bool = False):
     """Save analysis results to a file."""
     try:
-        with open(output_file, 'w') as f:
+        mode = 'a' if append else 'w'
+        with open(output_file, mode) as f:
             f.write(f"pHLA-TCR Splicer Analysis Report\n")
             f.write(f"================================\n\n")
             f.write(f"Analyzer: {analyzer_name}\n")
@@ -203,6 +204,103 @@ def save_results_to_file(results: dict, pdb_file: str, analyzer_name: str, outpu
         print(f"⚠️  Warning: Could not save results to {output_file}: {e}")
 
 
+def run_batch_analysis(pdb_files: list, analyzer_type: str, auto_detect: bool, 
+                      verbose: bool = False, output_file: str = None, show_summary: bool = False) -> dict:
+    """Run batch analysis on multiple PDB files."""
+    
+    batch_results = {}
+    successful_analyses = 0
+    failed_analyses = 0
+    total_chains = 0
+    total_identified = 0
+    
+    # Initialize output file if specified
+    if output_file:
+        with open(output_file, 'w') as f:
+            f.write("pHLA-TCR Splicer Batch Analysis Report\n")
+            f.write("=" * 40 + "\n")
+            f.write(f"Timestamp: {__import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Total files: {len(pdb_files)}\n\n")
+    
+    print(f"🧬 Running Batch Analysis")
+    print("=" * 50)
+    print(f"Files to process: {len(pdb_files)}")
+    print()
+    
+    for i, pdb_file in enumerate(pdb_files, 1):
+        try:
+            # Check if file exists
+            if not os.path.exists(pdb_file):
+                print(f"❌ File {i}/{len(pdb_files)}: '{pdb_file}' not found - SKIPPING")
+                failed_analyses += 1
+                batch_results[pdb_file] = {"status": "file_not_found", "results": None}
+                continue
+            
+            print(f"📊 Processing {i}/{len(pdb_files)}: {os.path.basename(pdb_file)}")
+            
+            # Determine analyzer type for this file
+            if auto_detect:
+                current_analyzer_type = detect_complex_type(pdb_file, verbose)
+                if verbose:
+                    print(f"   Auto-detected: {current_analyzer_type.upper()}")
+            else:
+                current_analyzer_type = analyzer_type
+            
+            # Run analysis
+            results = run_analysis(current_analyzer_type, pdb_file, verbose=False, output_file=None)
+            
+            # Track statistics
+            successful_analyses += 1
+            file_total_chains = len(results)
+            file_identified = sum(1 for chain_type in results.values() if chain_type != 'unknown')
+            total_chains += file_total_chains
+            total_identified += file_identified
+            
+            # Store results
+            batch_results[pdb_file] = {
+                "status": "success", 
+                "analyzer": current_analyzer_type,
+                "results": results,
+                "stats": {
+                    "total_chains": file_total_chains,
+                    "identified": file_identified,
+                    "unknown": file_total_chains - file_identified
+                }
+            }
+            
+            print(f"   ✅ {file_identified}/{file_total_chains} chains identified")
+            
+            # Append to output file if specified
+            if output_file:
+                save_results_to_file(results, pdb_file, 
+                                   f"{current_analyzer_type.upper()} Analyzer", 
+                                   output_file, verbose=False, append=True)
+            
+        except Exception as e:
+            print(f"   ❌ Analysis failed: {str(e)}")
+            failed_analyses += 1
+            batch_results[pdb_file] = {"status": "analysis_failed", "error": str(e), "results": None}
+        
+        if not verbose and i < len(pdb_files):
+            print()  # Blank line between files for readability
+    
+    # Show summary if requested
+    if show_summary or len(pdb_files) > 1:
+        print("\n📈 Batch Analysis Summary")
+        print("=" * 30)
+        print(f"Total files processed: {len(pdb_files)}")
+        print(f"Successful analyses: {successful_analyses}")
+        print(f"Failed analyses: {failed_analyses}")
+        if successful_analyses > 0:
+            print(f"Total chains: {total_chains}")
+            print(f"Identified chains: {total_identified}")
+            print(f"Unknown chains: {total_chains - total_identified}")
+            success_rate = (total_identified / total_chains * 100) if total_chains > 0 else 0
+            print(f"Identification rate: {success_rate:.1f}%")
+    
+    return batch_results
+
+
 def main():
     """Main entry point for the pHLA-TCR Splicer."""
     parser = argparse.ArgumentParser(
@@ -214,6 +312,8 @@ Examples:
   %(prog)s --type mhc-ii 4z7u.pdb  
   %(prog)s --auto complex.pdb --verbose
   %(prog)s --type mhc-i input.pdb --output results.txt
+  %(prog)s --type mhc-i *.pdb --batch-summary
+  %(prog)s --auto file1.pdb file2.pdb file3.pdb --output batch_results.txt
 
 Analyzer Types:
   mhc-i   : MHC Class I complexes (pHLA-TCR)
@@ -231,24 +331,30 @@ Analyzer Types:
     analyzer_group.add_argument(
         '--type', 
         choices=['mhc-i', 'mhc-ii'],
-        help='Specify analyzer type'
+        help='Specify analyzer type for all files'
     )
     analyzer_group.add_argument(
         '--auto', 
         action='store_true',
-        help='Auto-detect complex type (experimental)'
+        help='Auto-detect complex type for each file (experimental)'
     )
     
-    # Required PDB file
+    # Required PDB file(s)
     parser.add_argument(
-        'pdb_file',
-        help='Path to PDB file to analyze'
+        'pdb_files',
+        nargs='+',
+        help='Path(s) to PDB file(s) to analyze'
     )
     
     # Optional arguments
     parser.add_argument(
         '--output', '-o',
-        help='Output file to save results (optional)'
+        help='Output file to save results (optional). For multiple files, results are appended.'
+    )
+    parser.add_argument(
+        '--batch-summary',
+        action='store_true',
+        help='Show summary statistics for batch processing'
     )
     parser.add_argument(
         '--verbose', '-v',
@@ -264,31 +370,56 @@ Analyzer Types:
     # Parse arguments
     args = parser.parse_args()
     
-    # Validate PDB file exists
-    if not os.path.exists(args.pdb_file):
-        print(f"❌ Error: PDB file '{args.pdb_file}' does not exist.")
-        sys.exit(1)
+    # Handle single vs multiple files
+    if len(args.pdb_files) == 1:
+        # Single file analysis (original behavior)
+        pdb_file = args.pdb_files[0]
+        
+        # Validate PDB file exists
+        if not os.path.exists(pdb_file):
+            print(f"❌ Error: PDB file '{pdb_file}' does not exist.")
+            sys.exit(1)
+        
+        # Determine analyzer type
+        if args.auto:
+            analyzer_type = detect_complex_type(pdb_file, args.verbose)
+        else:
+            analyzer_type = args.type
+        
+        # Run analysis
+        try:
+            results = run_analysis(analyzer_type, pdb_file, args.verbose, args.output)
+            
+            print("\n🎉 Analysis completed successfully!")
+            if args.verbose:
+                print(f"📁 Analyzed: {pdb_file}")
+                print(f"🔬 Used: {analyzer_type.upper()} analyzer")
+                if args.output:
+                    print(f"💾 Saved: {args.output}")
+            
+        except KeyboardInterrupt:
+            print("\n⚠️  Analysis interrupted by user.")
+            sys.exit(1)
     
-    # Determine analyzer type
-    if args.auto:
-        analyzer_type = detect_complex_type(args.pdb_file, args.verbose)
     else:
-        analyzer_type = args.type
-    
-    # Run analysis
-    try:
-        results = run_analysis(analyzer_type, args.pdb_file, args.verbose, args.output)
-        
-        print("\n🎉 Analysis completed successfully!")
-        if args.verbose:
-            print(f"📁 Analyzed: {args.pdb_file}")
-            print(f"🔬 Used: {analyzer_type.upper()} analyzer")
+        # Batch analysis for multiple files
+        try:
+            batch_results = run_batch_analysis(
+                args.pdb_files, 
+                args.type, 
+                args.auto,
+                args.verbose, 
+                args.output,
+                args.batch_summary
+            )
+            
+            print("\n🎉 Batch analysis completed successfully!")
             if args.output:
-                print(f"💾 Saved: {args.output}")
-        
-    except KeyboardInterrupt:
-        print("\n⚠️  Analysis interrupted by user.")
-        sys.exit(1)
+                print(f"💾 Results saved to: {args.output}")
+                
+        except KeyboardInterrupt:
+            print("\n⚠️  Batch analysis interrupted by user.")
+            sys.exit(1)
 
 
 if __name__ == "__main__":

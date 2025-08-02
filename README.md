@@ -66,10 +66,10 @@ mhc-ii-analyze input.pdb --verbose
 ### 3. Python API
 
 ```python
-from phlatcr_splicer import pHLATCRAnalyzer, pMHCIITCRAnalyzer
+from phlatcr_splicer import pMHCITCRAnalyzer, pMHCIITCRAnalyzer
 
 # MHC-I Analysis
-mhc_i_analyzer = pHLATCRAnalyzer(verbose=True)
+mhc_i_analyzer = pMHCITCRAnalyzer(verbose=True)
 mhc_i_results = mhc_i_analyzer.analyze_pdb("test_data/1oga.pdb")
 
 # MHC-II Analysis
@@ -241,7 +241,7 @@ pip install -e .
 
 ```bash
 # Test package installation
-python -c "from phlatcr_splicer import pHLATCRAnalyzer, pMHCIITCRAnalyzer; print('✅ Package installed successfully!')"
+python -c "from phlatcr_splicer import pMHCITCRAnalyzer, pMHCIITCRAnalyzer; print('✅ Package installed successfully!')"
 
 # Test command-line tools
 python scripts/main.py --help

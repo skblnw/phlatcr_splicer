@@ -14,14 +14,14 @@ from collections import defaultdict
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from phlatcr_splicer import pHLATCRAnalyzer
+from phlatcr_splicer import pMHCITCRAnalyzer
 
 
 class AnalyzerBenchmark:
     """Benchmark the analyzer against known test cases."""
     
     def __init__(self):
-        self.analyzer = pHLATCRAnalyzer(verbose=False)
+        self.analyzer = pMHCITCRAnalyzer(verbose=False)
         self.test_cases = self._load_test_cases()
         self.results = {}
     

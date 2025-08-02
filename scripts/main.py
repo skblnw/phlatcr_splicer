@@ -24,12 +24,12 @@ from pathlib import Path
 
 # Import our analyzers
 try:
-    from phlatcr_splicer import pHLATCRAnalyzer, pMHCIITCRAnalyzer
+    from phlatcr_splicer import pMHCITCRAnalyzer, pMHCIITCRAnalyzer
 except ImportError:
     # Try adding current directory to path for development
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     try:
-        from phlatcr_splicer import pHLATCRAnalyzer, pMHCIITCRAnalyzer
+        from phlatcr_splicer import pMHCITCRAnalyzer, pMHCIITCRAnalyzer
     except ImportError:
         print("Error: Could not import phlatcr_splicer package.")
         print("Please run from the project root directory or install with: pip install -e .")
@@ -51,7 +51,7 @@ def detect_complex_type(pdb_file: str, verbose: bool = False) -> str:
     # Try both analyzers quickly to see which gives better results
     try:
         # Test MHC-I analyzer
-        mhc_i_analyzer = pHLATCRAnalyzer(verbose=False)
+        mhc_i_analyzer = pMHCITCRAnalyzer(verbose=False)
         mhc_i_result = mhc_i_analyzer.analyze_pdb(pdb_file)
         
         # Test MHC-II analyzer  
@@ -118,7 +118,7 @@ def run_analysis(analyzer_type: str, pdb_file: str, verbose: bool = False, outpu
     
     # Initialize the appropriate analyzer
     if analyzer_type == "mhc-i":
-        analyzer = pHLATCRAnalyzer(verbose=verbose)
+        analyzer = pMHCITCRAnalyzer(verbose=verbose)
         analyzer_name = "MHC-I (pHLA-TCR)"
     elif analyzer_type == "mhc-ii":
         analyzer = pMHCIITCRAnalyzer(verbose=verbose)

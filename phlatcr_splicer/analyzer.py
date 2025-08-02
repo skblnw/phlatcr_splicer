@@ -28,7 +28,7 @@ except ImportError:
     sys.exit(1)
 
 
-class pHLATCRAnalyzer:
+class pMHCITCRAnalyzer:
     """
     Main class for analyzing pHLA-TCR complex structures.
     """
@@ -1007,7 +1007,7 @@ def main():
     args = parser.parse_args()
     
     # Initialize analyzer
-    analyzer = pHLATCRAnalyzer(verbose=args.verbose)
+    analyzer = pMHCITCRAnalyzer(verbose=args.verbose)
     
     try:
         # Analyze the PDB file

@@ -1,13 +1,13 @@
 # API Reference
 
-## pHLATCRAnalyzer Class
+## pMHCITCRAnalyzer Class
 
 The main class for analyzing pHLA-TCR complex structures.
 
 ### Constructor
 
 ```python
-pHLATCRAnalyzer(verbose: bool = True)
+pMHCITCRAnalyzer(verbose: bool = True)
 ```
 
 **Parameters:**
@@ -31,7 +31,7 @@ Analyze a PDB file and identify chain types.
 
 **Example:**
 ```python
-analyzer = pHLATCRAnalyzer()
+analyzer = pMHCITCRAnalyzer()
 result = analyzer.analyze_pdb("complex.pdb")
 # Returns: {'A': 'tcr_alpha', 'B': 'tcr_beta', 'H': 'mhc_heavy', 'L': 'b2m', 'P': 'peptide'}
 ```
@@ -182,10 +182,10 @@ The analyzer handles several error conditions:
 
 ### Custom Pattern Matching
 
-Subclass `pHLATCRAnalyzer` and override pattern loading methods:
+Subclass `pMHCITCRAnalyzer` and override pattern loading methods:
 
 ```python
-class CustomAnalyzer(pHLATCRAnalyzer):
+class CustomAnalyzer(pMHCITCRAnalyzer):
     def _load_custom_patterns(self):
         return {
             'length_range': (100, 200),

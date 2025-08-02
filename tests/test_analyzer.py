@@ -10,15 +10,15 @@ import tempfile
 import os
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from phlatcr_splicer import pHLATCRAnalyzer
+from phlatcr_splicer import pMHCITCRAnalyzer
 
 
-class TestpHLATCRAnalyzer(unittest.TestCase):
+class TestpMHCITCRAnalyzer(unittest.TestCase):
     """Test cases for the pHLA-TCR analyzer."""
     
     def setUp(self):
         """Set up test fixtures."""
-        self.analyzer = pHLATCRAnalyzer(verbose=False)
+        self.analyzer = pMHCITCRAnalyzer(verbose=False)
     
     def test_three_to_one_conversion(self):
         """Test amino acid 3-letter to 1-letter conversion."""
@@ -220,10 +220,10 @@ def run_example_analysis():
     """Run an example analysis with mock data."""
     print("Running example analysis...")
     
-    analyzer = pHLATCRAnalyzer(verbose=True)
+    analyzer = pMHCITCRAnalyzer(verbose=True)
     
     # Create test data
-    test = TestpHLATCRAnalyzer()
+    test = TestpMHCITCRAnalyzer()
     test.setUp()
     mock_pdb = test.create_mock_pdb()
     

@@ -7,7 +7,7 @@ analyzers from the phlatcr_splicer package.
 Author: AI Assistant
 """
 
-from phlatcr_splicer import pHLATCRAnalyzer, pMHCIITCRAnalyzer
+from phlatcr_splicer import pMHCITCRAnalyzer, pMHCIITCRAnalyzer
 
 
 def analyze_mhc_i_complex(pdb_file: str):
@@ -25,7 +25,7 @@ def analyze_mhc_i_complex(pdb_file: str):
     print("-" * 40)
     
     # Initialize MHC-I analyzer
-    mhc_i_analyzer = pHLATCRAnalyzer(verbose=True)
+    mhc_i_analyzer = pMHCITCRAnalyzer(verbose=True)
     
     # Analyze the complex
     result = mhc_i_analyzer.analyze_pdb(pdb_file)
@@ -82,7 +82,7 @@ def compare_analyzers():
     print("=" * 50)
     
     # Initialize both analyzers
-    mhc_i = pHLATCRAnalyzer(verbose=False)
+    mhc_i = pMHCITCRAnalyzer(verbose=False)
     mhc_ii = pMHCIITCRAnalyzer(verbose=False)
     
     print("\n📋 Chain Type Differences:")
@@ -200,10 +200,10 @@ def main():
     print("   results = batch_analysis(files, complex_type='auto')")
     
     print("\n3. Python API:")
-    print("   from phlatcr_splicer import pHLATCRAnalyzer, pMHCIITCRAnalyzer")
+    print("   from phlatcr_splicer import pMHCITCRAnalyzer, pMHCIITCRAnalyzer")
     print("   ")
     print("   # MHC-I analysis")
-    print("   mhc_i_analyzer = pHLATCRAnalyzer(verbose=True)")
+    print("   mhc_i_analyzer = pMHCITCRAnalyzer(verbose=True)")
     print("   result1 = mhc_i_analyzer.analyze_pdb('complex.pdb')")
     print("   ")
     print("   # MHC-II analysis")
@@ -216,7 +216,7 @@ def main():
     
     print("\n✅ Both analyzers ready for use!")
     print("   📦 Package: phlatcr_splicer")
-    print("   🔬 MHC-I: pHLATCRAnalyzer")
+    print("   🔬 MHC-I: pMHCITCRAnalyzer")
     print("   🔬 MHC-II: pMHCIITCRAnalyzer")
 
 

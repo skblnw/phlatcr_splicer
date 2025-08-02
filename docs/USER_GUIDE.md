@@ -52,9 +52,9 @@ python phlatcr_analyzer.py your_complex.pdb
 
 ### Basic Python usage:
 ```python
-from phlatcr_analyzer import pHLATCRAnalyzer
+from phlatcr_analyzer import pMHCITCRAnalyzer
 
-analyzer = pHLATCRAnalyzer()
+analyzer = pMHCITCRAnalyzer()
 result = analyzer.analyze_pdb("your_complex.pdb")
 print(result)
 ```
@@ -93,10 +93,10 @@ Options:
 
 ### Basic Analysis
 ```python
-from phlatcr_analyzer import pHLATCRAnalyzer
+from phlatcr_analyzer import pMHCITCRAnalyzer
 
 # Initialize analyzer
-analyzer = pHLATCRAnalyzer(verbose=True)
+analyzer = pMHCITCRAnalyzer(verbose=True)
 
 # Analyze PDB file
 assignments = analyzer.analyze_pdb("complex.pdb")
@@ -109,9 +109,9 @@ for chain_id, chain_type in assignments.items():
 ### Batch Processing
 ```python
 import os
-from phlatcr_analyzer import pHLATCRAnalyzer
+from phlatcr_analyzer import pMHCITCRAnalyzer
 
-analyzer = pHLATCRAnalyzer(verbose=False)
+analyzer = pMHCITCRAnalyzer(verbose=False)
 results = {}
 
 # Process multiple files
@@ -137,7 +137,7 @@ with open("batch_results.txt", "w") as f:
 
 ### Custom Analysis
 ```python
-class DetailedAnalyzer(pHLATCRAnalyzer):
+class DetailedAnalyzer(pMHCITCRAnalyzer):
     def analyze_with_confidence(self, pdb_file):
         # Get basic assignments
         assignments = self.analyze_pdb(pdb_file)
@@ -231,7 +231,7 @@ The analyzer uses multiple criteria for chain identification:
 ### Debug Mode
 ```python
 # Enable verbose output for debugging
-analyzer = pHLATCRAnalyzer(verbose=True)
+analyzer = pMHCITCRAnalyzer(verbose=True)
 result = analyzer.analyze_pdb("problematic.pdb")
 ```
 
@@ -258,7 +258,7 @@ is_valid = validate_phla_tcr_complex(result)
 
 ### Custom Pattern Matching
 ```python
-class CustomAnalyzer(pHLATCRAnalyzer):
+class CustomAnalyzer(pMHCITCRAnalyzer):
     def _load_custom_patterns(self):
         """Add patterns for custom chain types."""
         return {
@@ -311,10 +311,10 @@ def analyze_contacts(pdb_file, assignments):
 
 ### Example 1: Single Complex Analysis
 ```python
-from phlatcr_analyzer import pHLATCRAnalyzer
+from phlatcr_analyzer import pMHCITCRAnalyzer
 
 # Analyze a single pHLA-TCR complex
-analyzer = pHLATCRAnalyzer(verbose=True)
+analyzer = pMHCITCRAnalyzer(verbose=True)
 result = analyzer.analyze_pdb("1ao7.pdb")
 
 print("Chain assignments:")
@@ -328,9 +328,9 @@ analyzer.save_analysis_report(result, "1ao7_analysis.txt")
 ### Example 2: Batch Processing with Error Handling
 ```python
 import glob
-from phlatcr_analyzer import pHLATCRAnalyzer
+from phlatcr_analyzer import pMHCITCRAnalyzer
 
-analyzer = pHLATCRAnalyzer(verbose=False)
+analyzer = pMHCITCRAnalyzer(verbose=False)
 
 # Process all PDB files in directory
 pdb_files = glob.glob("*.pdb")
@@ -362,11 +362,11 @@ print(f"\nSummary: {successful} successful, {failed} failed")
 ### Example 3: Integration with Data Analysis
 ```python
 import pandas as pd
-from phlatcr_analyzer import pHLATCRAnalyzer
+from phlatcr_analyzer import pMHCITCRAnalyzer
 
 def analyze_complex_dataset(pdb_files):
     """Analyze a dataset of pHLA-TCR complexes."""
-    analyzer = pHLATCRAnalyzer(verbose=False)
+    analyzer = pMHCITCRAnalyzer(verbose=False)
     
     results = []
     for pdb_file in pdb_files:

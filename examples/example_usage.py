@@ -7,7 +7,7 @@ This script demonstrates how to use the analyzer with various types of input.
 
 import os
 import sys
-from phlatcr_analyzer import pHLATCRAnalyzer
+from phlatcr_analyzer import pMHCITCRAnalyzer
 
 
 def example_basic_usage():
@@ -16,7 +16,7 @@ def example_basic_usage():
     print("-" * 30)
     
     # Initialize the analyzer
-    analyzer = pHLATCRAnalyzer(verbose=True)
+    analyzer = pMHCITCRAnalyzer(verbose=True)
     
     # Example PDB file (you would replace this with your actual file)
     pdb_file = "example_complex.pdb"
@@ -55,7 +55,7 @@ def example_batch_processing():
         "complex3.pdb"
     ]
     
-    analyzer = pHLATCRAnalyzer(verbose=False)
+    analyzer = pMHCITCRAnalyzer(verbose=False)
     
     results = {}
     
@@ -90,7 +90,7 @@ def example_custom_analysis():
     print("\nExample 3: Custom Analysis")
     print("-" * 30)
     
-    class CustomAnalyzer(pHLATCRAnalyzer):
+    class CustomAnalyzer(pMHCITCRAnalyzer):
         """Extended analyzer with custom functionality."""
         
         def analyze_pdb_detailed(self, pdb_file):
@@ -175,8 +175,8 @@ END
    python phlatcr_analyzer.py -o report.txt your_complex.pdb
 
 4. In Python script:
-   from phlatcr_analyzer import pHLATCRAnalyzer
-   analyzer = pHLATCRAnalyzer()
+   from phlatcr_analyzer import pMHCITCRAnalyzer
+   analyzer = pMHCITCRAnalyzer()
    result = analyzer.analyze_pdb("your_complex.pdb")
 
 Expected Chain Types:

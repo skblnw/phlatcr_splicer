@@ -212,8 +212,12 @@ class pMHCIITCRAnalyzer:
             for chain_id, info in chain_info.items():
                 print(f"  Chain {chain_id}: {len(info['sequence'])} residues")
         
-        # Detect multiple complexes
-        complexes = self._detect_complexes(chain_info, structure)
+        # Try REMARK-based grouping first (REMARK 350 chain groups)
+        complexes = self._detect_complexes_from_remarks(pdb_file, chain_info)
+        
+        # Fall back to existing heuristics if no usable groups were found
+        if len(complexes) <= 1:
+            complexes = self._detect_complexes(chain_info, structure)
         
         if self.verbose and len(complexes) > 1:
             print(f"\nDetected {len(complexes)} complexes:")
@@ -235,6 +239,49 @@ class pMHCIITCRAnalyzer:
                 print(f"  Chain {chain_id}: {chain_assignments[chain_id]}")
         
         return chain_assignments
+
+    def _detect_complexes_from_remarks(self, pdb_file: str, chain_info: Dict) -> List[Dict]:
+        """
+        Use REMARK 350 lines to pre-group chains into complexes when available.
+        
+        In multi-complex entries, lines like "APPLY THE FOLLOWING TO CHAINS: A, B, ..."
+        hint at biological assembly groupings that often correspond to a single complex.
+        """
+        try:
+            groups: List[List[str]] = []
+            with open(pdb_file, 'r') as fh:
+                for line in fh:
+                    if line.startswith('REMARK 350') and 'APPLY THE FOLLOWING TO CHAINS:' in line:
+                        parts = line.split('APPLY THE FOLLOWING TO CHAINS:')
+                        if len(parts) < 2:
+                            continue
+                        tail = parts[1].strip()
+                        tail = tail.split('  ')[0].strip()
+                        raw_tokens = [t.strip() for t in tail.split(',') if t.strip()]
+                        chains = [tok[0] for tok in raw_tokens if len(tok) > 0]
+                        if len(chains) >= 4:
+                            groups.append(chains)
+            unique_groups: List[List[str]] = []
+            seen = set()
+            for grp in groups:
+                key = tuple(sorted(grp))
+                if key not in seen:
+                    seen.add(key)
+                    unique_groups.append(grp)
+            if len(unique_groups) >= 2:
+                complexes: List[Dict] = []
+                for grp in unique_groups:
+                    complex_chains: Dict = {}
+                    for cid in grp:
+                        if cid in chain_info:
+                            complex_chains[cid] = chain_info[cid]
+                    if complex_chains:
+                        complexes.append(complex_chains)
+                if len([c for c in complexes if len(c) >= 2]) >= 2:
+                    return complexes
+            return [chain_info]
+        except Exception:
+            return [chain_info]
     
     def _extract_chain_info(self, structure: Structure) -> Dict:
         """
@@ -653,14 +700,17 @@ class pMHCIITCRAnalyzer:
             best_chain_type = best_type[0]
             
             # Check if this is a unique type already assigned
-            unique_types = {'peptide', 'mhc_ii_alpha', 'mhc_ii_beta'}
+            # For MHC-II complexes, each of these should appear at most once per complex
+            unique_types = {'peptide', 'mhc_ii_alpha', 'mhc_ii_beta', 'tcr_alpha', 'tcr_beta'}
             
             if best_chain_type in unique_types and best_chain_type in used_unique_types:
                 # Find next best type that's not unique or not used
                 sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
                 assigned = False
                 for chain_type, score in sorted_scores:
-                    if score > 0.3:  # Minimum threshold
+                    # Slightly relax threshold for TCR types to avoid duplicate alpha assignment
+                    min_thresh = 0.25 if chain_type in {'tcr_alpha', 'tcr_beta'} else 0.3
+                    if score > min_thresh:
                         if chain_type not in unique_types or chain_type not in used_unique_types:
                             assignments[chain_id] = chain_type
                             if chain_type in unique_types:
@@ -678,6 +728,62 @@ class pMHCIITCRAnalyzer:
                         used_unique_types.add(best_chain_type)
                 else:
                     assignments[chain_id] = 'unknown'
+        
+        # Post-process to ensure one TCR alpha and one TCR beta per complex when possible
+        try:
+            tcr_alpha_present = any(ct == 'tcr_alpha' for ct in assignments.values())
+            tcr_beta_present = any(ct == 'tcr_beta' for ct in assignments.values())
+            
+            # If beta missing, try to assign one unknown chain as beta based on length/score
+            if not tcr_beta_present:
+                beta_candidates = []
+                for cid, info in chain_info.items():
+                    if assignments.get(cid, 'unknown') == 'unknown':
+                        length = info.get('length', 0)
+                        if 215 <= length <= 300:
+                            seq = info.get('sequence', '')
+                            beta_candidates.append((cid, self._score_tcr_beta(seq, length)))
+                if beta_candidates:
+                    # Pick highest scoring candidate
+                    beta_candidates.sort(key=lambda x: x[1], reverse=True)
+                    best_cid, best_score = beta_candidates[0]
+                    if best_score >= 0.2:
+                        assignments[best_cid] = 'tcr_beta'
+                    else:
+                        # Length-based fallback: choose the longest unknown as beta
+                        longest_unknown = max(
+                            ((cid, info.get('length', 0)) for cid, info in chain_info.items() if assignments.get(cid, 'unknown') == 'unknown'),
+                            key=lambda x: x[1],
+                            default=None
+                        )
+                        if longest_unknown and longest_unknown[1] >= 220:
+                            assignments[longest_unknown[0]] = 'tcr_beta'
+            
+            # If alpha missing, try to assign one unknown chain as alpha based on length/score
+            if not tcr_alpha_present:
+                alpha_candidates = []
+                for cid, info in chain_info.items():
+                    if assignments.get(cid, 'unknown') == 'unknown':
+                        length = info.get('length', 0)
+                        if 170 <= length <= 235:
+                            seq = info.get('sequence', '')
+                            alpha_candidates.append((cid, self._score_tcr_alpha(seq, length)))
+                if alpha_candidates:
+                    alpha_candidates.sort(key=lambda x: x[1], reverse=True)
+                    best_cid, best_score = alpha_candidates[0]
+                    if best_score >= 0.2:
+                        assignments[best_cid] = 'tcr_alpha'
+                    else:
+                        # Length-based fallback: choose the shortest remaining unknown above 170 as alpha
+                        shortest_unknown = min(
+                            ((cid, info.get('length', 0)) for cid, info in chain_info.items() if assignments.get(cid, 'unknown') == 'unknown' and info.get('length', 0) >= 170),
+                            key=lambda x: x[1],
+                            default=None
+                        )
+                        if shortest_unknown:
+                            assignments[shortest_unknown[0]] = 'tcr_alpha'
+        except Exception:
+            pass
         
         return assignments
     
@@ -913,12 +1019,15 @@ class pMHCIITCRAnalyzer:
             # Bonus for optimal length range
             if optimal_range[0] <= length <= optimal_range[1]:
                 score += 0.3
+        elif 170 <= length < alpha_range[0]:
+            # Slightly short alpha chains are acceptable in some PDBs
+            score += 0.35
         elif length > alpha_range[1]:
             # Penalty for being too long (likely beta)
             score -= 0.4
         elif length < alpha_range[0]:
             # Penalty for being too short
-            score -= 0.3
+            score -= 0.2
         
         # Check for highly specific alpha patterns
         n_terminal = sequence[:30] if len(sequence) >= 30 else sequence
@@ -955,7 +1064,9 @@ class pMHCIITCRAnalyzer:
         score += motif_count * 0.1
         
         # Strong preference for shorter chains (alpha characteristic)
-        if length < 220:
+        if length < 190:
+            score += 0.25
+        elif length < 220:
             score += 0.2
         elif length > 250:
             score -= 0.5  # Strong penalty for long chains
@@ -986,8 +1097,11 @@ class pMHCIITCRAnalyzer:
             # Bonus for optimal length range
             if optimal_range[0] <= length <= optimal_range[1]:
                 score += 0.3
-        elif length < beta_range[0]:
-            # Penalty for being too short (likely alpha)
+        elif 220 <= length < beta_range[0]:
+            # Slightly short beta chains (common edge case)
+            score += 0.2
+        elif length < 220:
+            # Penalty for being clearly too short (likely alpha)
             score -= 0.4
         elif length > beta_range[1]:
             # Penalty for being too long (likely MHC)

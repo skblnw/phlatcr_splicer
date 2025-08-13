@@ -188,8 +188,13 @@ class pMHCITCRAnalyzer:
             for chain_id, info in chain_info.items():
                 print(f"  Chain {chain_id}: {len(info['sequence'])} residues")
         
-        # Detect multiple complexes
-        complexes = self._detect_complexes(chain_info, structure)
+        # Try to detect complexes from REMARK hints first (e.g., REMARK 350 chains groups)
+        complexes = self._detect_complexes_from_remarks(pdb_file, chain_info)
+        
+        # If REMARKs did not provide grouping, fall back to existing heuristics
+        if len(complexes) <= 1:
+             # Detect multiple complexes
+             complexes = self._detect_complexes(chain_info, structure)
         
         if self.verbose and len(complexes) > 1:
             print(f"\nDetected {len(complexes)} complexes:")
@@ -211,6 +216,69 @@ class pMHCITCRAnalyzer:
                 print(f"  Chain {chain_id}: {chain_assignments[chain_id]}")
         
         return chain_assignments
+
+    def _detect_complexes_from_remarks(self, pdb_file: str, chain_info: Dict) -> List[Dict]:
+        """
+        Use REMARK lines (especially REMARK 350) to pre-group chains into complexes.
+        
+        Many multi-complex pHLA-TCR PDBs list biological assembly groups as
+        "APPLY THE FOLLOWING TO CHAINS: A, B, C, M, P". These groups typically
+        correspond to one pHLA-TCR complex (5 chains: MHC heavy, β2m, peptide,
+        TCR α, TCR β).
+        
+        Args:
+            pdb_file: Path to the PDB file
+            chain_info: Extracted chain information
+        
+        Returns:
+            List of dictionaries, each containing the chains for one complex.
+            Returns [chain_info] if no usable REMARK grouping is found.
+        """
+        try:
+            groups: List[List[str]] = []
+            with open(pdb_file, 'r') as fh:
+                for line in fh:
+                    # Focus on REMARK 350 lines that specify chain application
+                    if line.startswith('REMARK 350') and 'APPLY THE FOLLOWING TO CHAINS:' in line:
+                        # Extract substring after the colon
+                        parts = line.split('APPLY THE FOLLOWING TO CHAINS:')
+                        if len(parts) < 2:
+                            continue
+                        tail = parts[1].strip()
+                        # Remove trailing whitespace and anything after two or more spaces (often BIOMT follows on later lines)
+                        tail = tail.split('  ')[0].strip()
+                        # Split by commas and spaces to get chain ids
+                        raw_tokens = [t.strip() for t in tail.split(',') if t.strip()]
+                        # Keep only first character of token (classic PDB chain IDs are single char)
+                        chains = [tok[0] for tok in raw_tokens if len(tok) > 0]
+                        # Basic sanity: groups that look like plausible complexes (4-6 chains)
+                        if len(chains) >= 4:
+                            groups.append(chains)
+            # Deduplicate identical groups
+            unique_groups: List[List[str]] = []
+            seen = set()
+            for grp in groups:
+                key = tuple(sorted(grp))
+                if key not in seen:
+                    seen.add(key)
+                    unique_groups.append(grp)
+            # Map groups to chain_info
+            if len(unique_groups) >= 2:
+                complexes: List[Dict] = []
+                for grp in unique_groups:
+                    complex_chains: Dict = {}
+                    for cid in grp:
+                        if cid in chain_info:
+                            complex_chains[cid] = chain_info[cid]
+                    # Only include non-empty groups
+                    if complex_chains:
+                        complexes.append(complex_chains)
+                # Ensure we truly have multiple non-empty complexes
+                if len([c for c in complexes if len(c) >= 2]) >= 2:
+                    return complexes
+            return [chain_info]
+        except Exception:
+            return [chain_info]
     
     def _extract_chain_info(self, structure: Structure) -> Dict:
         """
@@ -557,6 +625,9 @@ class pMHCITCRAnalyzer:
             # Bonus for optimal length range
             if optimal_range[0] <= length <= optimal_range[1]:
                 score += 0.2
+        elif 170 <= length < alpha_range[0]:
+            # Slightly short alpha chains are acceptable
+            score += 0.3
         elif length > alpha_range[1]:
             # Penalty for being too long (likely beta)
             score -= 0.3
@@ -585,7 +656,9 @@ class pMHCITCRAnalyzer:
             score += 0.2
         
         # Strong preference for shorter chains (alpha characteristic)
-        if length < 220:
+        if length < 190:
+            score += 0.25
+        elif length < 220:
             score += 0.2
         elif length > 250:
             score -= 0.4  # Strong penalty for long chains

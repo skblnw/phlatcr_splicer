@@ -35,7 +35,7 @@ python scripts/main.py --type mhc-i *.pdb --batch-summary
 python scripts/main.py --auto file1.pdb file2.pdb file3.pdb --output results.txt
 
 # Individual analyzers
-phlatcr-analyze test_data/1oga.pdb          # MHC-I specific
+mhc-i-analyze test_data/1oga.pdb            # MHC-I specific
 mhc-ii-analyze test_data/4z7u.pdb           # MHC-II specific
 ```
 
@@ -67,7 +67,7 @@ Both analyzers now have consistent, simplified interfaces:
 
 ```bash
 # MHC-I analyzer
-phlatcr-analyze input.pdb
+mhc-i-analyze input.pdb
 
 # MHC-II analyzer  
 mhc-ii-analyze input.pdb
@@ -284,7 +284,7 @@ python -c "from phlatcr_splicer import pMHCITCRAnalyzer, pMHCIITCRAnalyzer; prin
 
 # Test command-line tools
 python scripts/main.py --help
-phlatcr-analyze --help
+mhc-i-analyze --help
 mhc-ii-analyze --help
 ```
 

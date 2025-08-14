@@ -211,7 +211,7 @@ def main():
     print("   result2 = mhc_ii_analyzer.analyze_pdb('complex.pdb')")
     
     print("\n4. Command Line:")
-    print("   phlatcr-analyze complex.pdb     # MHC-I")
+    print("   mhc-i-analyze complex.pdb       # MHC-I")
     print("   mhc-ii-analyze complex.pdb      # MHC-II")
     
     print("\n✅ Both analyzers ready for use!")

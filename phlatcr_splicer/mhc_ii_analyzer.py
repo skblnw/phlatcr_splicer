@@ -300,13 +300,19 @@ class pMHCIITCRAnalyzer:
             length = chain_info[cid]['length']
             if not length_ok(annotated_type, length):
                 continue
-            # Apply only if current is unknown or matches annotated type
             base_current = current.split('_complex')[0]
+            # For MHC-II alpha/beta and peptide, trust header over scoring
+            if annotated_type in ('mhc_ii_alpha', 'mhc_ii_beta', 'peptide'):
+                comp_idx = chain_to_complex.get(cid)
+                if comp_idx is not None and len(complexes) > 1:
+                    updated[cid] = f"{annotated_type}_complex{comp_idx}"
+                else:
+                    updated[cid] = annotated_type
+                continue
+            # For TCR types, apply only if current is unknown or matches annotated type
             if base_current == 'unknown' or base_current == annotated_type:
                 comp_idx = chain_to_complex.get(cid)
-                if comp_idx is not None and '_complex' in current:
-                    updated[cid] = f"{annotated_type}_complex{comp_idx}"
-                elif comp_idx is not None and len(complexes) > 1:
+                if comp_idx is not None and len(complexes) > 1:
                     updated[cid] = f"{annotated_type}_complex{comp_idx}"
                 else:
                     updated[cid] = annotated_type

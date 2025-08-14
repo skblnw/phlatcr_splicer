@@ -282,8 +282,8 @@ class pMHCITCRAnalyzer:
                         raw_tokens = [t.strip() for t in tail.split(',') if t.strip()]
                         # Keep only first character of token (classic PDB chain IDs are single char)
                         chains = [tok[0] for tok in raw_tokens if len(tok) > 0]
-                        # Basic sanity: groups that look like plausible complexes (4-6 chains)
-                        if len(chains) >= 4:
+                        # Accept partial groups (>=2) – we'll merge plausibly later
+                        if len(chains) >= 2:
                             groups.append(chains)
             # Deduplicate identical groups
             unique_groups: List[List[str]] = []
@@ -304,6 +304,49 @@ class pMHCITCRAnalyzer:
                         break
                 if not is_subset:
                     maximal_groups.append(sorted(list(s)))
+            
+            # Attempt to merge disjoint partial groups into plausible 5-chain complexes
+            def is_plausible_mhci_complex(chain_ids: List[str]) -> bool:
+                lengths = [chain_info[cid]['length'] for cid in chain_ids if cid in chain_info]
+                if len(lengths) < 4 or len(lengths) > 6:
+                    return False
+                peptides = sum(1 for L in lengths if L < 20)
+                b2m = sum(1 for L in lengths if 90 <= L <= 110)
+                mhc = sum(1 for L in lengths if L > 250)
+                tcr_alpha_like = sum(1 for L in lengths if 170 <= L <= 230)
+                tcr_beta_like = sum(1 for L in lengths if 230 <= L <= 300)
+                if not (peptides >= 1 and b2m >= 1 and mhc >= 1):
+                    return False
+                if (tcr_alpha_like + tcr_beta_like) < 1:
+                    return False
+                return True
+            
+            merged: List[set] = [set(g) for g in maximal_groups]
+            changed = True
+            while changed and len(merged) > 1:
+                changed = False
+                new_merged: List[set] = []
+                used = set()
+                for i in range(len(merged)):
+                    if i in used:
+                        continue
+                    merged_set = set(merged[i])
+                    best_j = None
+                    for j in range(i+1, len(merged)):
+                        if j in used:
+                            continue
+                        s = merged_set.union(merged[j])
+                        if len(s) <= 6 and is_plausible_mhci_complex(list(s)):
+                            best_j = j
+                            break
+                    if best_j is not None:
+                        merged_set = merged_set.union(merged[best_j])
+                        used.add(best_j)
+                        changed = True
+                    used.add(i)
+                    new_merged.append(merged_set)
+                merged = new_merged
+            maximal_groups = [sorted(list(s)) for s in merged]
             # If overlapping groups remain (share chains), treat as single complex
             for i in range(len(maximal_groups)):
                 for j in range(i+1, len(maximal_groups)):
@@ -417,7 +460,7 @@ class pMHCITCRAnalyzer:
                 return 'tcr_beta'
         if 'BETA-2-MICROGLOBULIN' in desc or 'BETA 2-MICROGLOBULIN' in desc or 'B2M' in desc:
             return 'b2m'
-        if 'HLA' in desc and ('CLASS I' in desc or 'A*' in desc or 'B*' in desc or 'C*' in desc):
+        if ('MHC CLASS I' in desc or 'HLA' in desc or 'ALPHA CHAIN' in desc) and ('CLASS I' in desc or 'A*' in desc or 'B*' in desc or 'C*' in desc or 'ALPHA CHAIN' in desc):
             return 'mhc_heavy'
         if 'PEPTIDE' in desc or 'ANTIGEN' in desc or 'EPITOPE' in desc:
             return 'peptide'

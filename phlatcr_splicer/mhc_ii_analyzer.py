@@ -439,12 +439,30 @@ class pMHCIITCRAnalyzer:
                                 if c and c[0].isalpha():
                                     mol_to_chains[current_mol].append(c[0])
                     elif line.startswith('DBREF'):
-                        # DBREF lines include chain and DB identifiers
-                        chain_id = line[12].strip()
-                        db_id = line[42:].strip().upper()
-                        mapped = self._map_dbref_to_type(db_id)
-                        if mapped:
-                            annotations[chain_id] = mapped
+                        # DBREF lines include chain and DB identifiers and sequence range
+                        try:
+                            tokens = line.split()
+                            # tokens: DBREF, pdb, chain, start, end, db, acc, dbname, dbstart, dbend
+                            chain_id = tokens[2]
+                            start = int(tokens[3]) if tokens[3].lstrip('-').isdigit() else None
+                            end = int(tokens[4]) if tokens[4].lstrip('-').isdigit() else None
+                            # Map by DB name for general types
+                            db_id = ' '.join(tokens[5:]).upper()
+                            mapped = self._map_dbref_to_type(db_id)
+                            if mapped:
+                                annotations[chain_id] = mapped
+                            # If range is short (<=30), treat as peptide regardless of db_id
+                            if start is not None and end is not None:
+                                seg_len = abs(end - start) + 1
+                                if seg_len <= 30:
+                                    annotations[chain_id] = 'peptide'
+                        except Exception:
+                            # Fallback to previous simple parsing
+                            chain_id = line[12].strip()
+                            db_id = line[42:].strip().upper()
+                            mapped = self._map_dbref_to_type(db_id)
+                            if mapped:
+                                annotations[chain_id] = mapped
             # Map COMPND molecules to types
             for mol_id, chains in mol_to_chains.items():
                 desc = mol_to_desc.get(mol_id, '').upper()
@@ -452,6 +470,11 @@ class pMHCIITCRAnalyzer:
                 if mapped:
                     for cid in chains:
                         annotations.setdefault(cid, mapped)
+                # Heuristic: if molecule description suggests antigen/protein (e.g., TENASCIN) and not HLA/TCR,
+                # mark as peptide; will be validated by length later when applying
+                if ('TENASCIN' in desc or 'FRAGMENT' in desc or 'RESIDUES' in desc) and not any(k in desc for k in ['HLA', 'MHC', 'TCR']):
+                    for cid in chains:
+                        annotations.setdefault(cid, 'peptide')
         except Exception:
             return annotations
         return annotations

@@ -188,13 +188,19 @@ class pMHCITCRAnalyzer:
             for chain_id, info in chain_info.items():
                 print(f"  Chain {chain_id}: {len(info['sequence'])} residues")
         
-        # Try to detect complexes from REMARK hints first (e.g., REMARK 350 chains groups)
-        complexes = self._detect_complexes_from_remarks(pdb_file, chain_info)
+        # Scenario detection based on header presence
+        header_present = self._has_header_section(pdb_file)
+        header_preassignments = self._extract_header_chain_annotations(pdb_file) if header_present else {}
         
-        # If REMARKs did not provide grouping, fall back to existing heuristics
-        if len(complexes) <= 1:
-             # Detect multiple complexes
-             complexes = self._detect_complexes(chain_info, structure)
+        # If header exists, prefer REMARK-based grouping; else assume single complex
+        if header_present:
+            # Try to detect complexes from REMARK hints first (e.g., REMARK 350 chains groups)
+            complexes = self._detect_complexes_from_remarks(pdb_file, chain_info)
+            # If REMARKs did not provide grouping, fall back to existing heuristics
+            if len(complexes) <= 1:
+                complexes = self._detect_complexes(chain_info, structure)
+        else:
+            complexes = [chain_info]
         
         if self.verbose and len(complexes) > 1:
             print(f"\nDetected {len(complexes)} complexes:")
@@ -205,9 +211,32 @@ class pMHCITCRAnalyzer:
         # Classify chains within each complex
         if len(complexes) > 1:
             chain_assignments = self._classify_multiple_complexes(complexes)
+            # Apply header-based preassignments if available
+            if header_preassignments:
+                chain_to_complex = {}
+                for idx, comp in enumerate(complexes, start=1):
+                    for cid in comp.keys():
+                        chain_to_complex[cid] = idx
+                for cid, ctype in header_preassignments.items():
+                    if cid in chain_assignments:
+                        base = ctype
+                        comp_idx = chain_to_complex.get(cid)
+                        if comp_idx is not None:
+                            chain_assignments[cid] = f"{base}_complex{comp_idx}"
+                        else:
+                            chain_assignments[cid] = base
         else:
             # Single complex - use original logic
             chain_assignments = self._classify_chains(chain_info)
+            # Apply header-based preassignments if available
+            if header_preassignments:
+                for cid, ctype in header_preassignments.items():
+                    if cid in chain_assignments:
+                        chain_assignments[cid] = ctype
+        
+        # If no header present (likely predicted single complex), validate and warn on failure
+        if not header_present:
+            self._validate_single_complex_expectations(chain_assignments)
         
         if self.verbose:
             print("\nFinal chain assignments:")
@@ -262,10 +291,26 @@ class pMHCITCRAnalyzer:
                 if key not in seen:
                     seen.add(key)
                     unique_groups.append(grp)
+            # Remove subset groups (keep only maximal sets)
+            maximal_groups: List[List[str]] = []
+            unique_sets = [set(g) for g in unique_groups]
+            for i, s in enumerate(unique_sets):
+                is_subset = False
+                for j, t in enumerate(unique_sets):
+                    if i != j and s.issubset(t):
+                        is_subset = True
+                        break
+                if not is_subset:
+                    maximal_groups.append(sorted(list(s)))
+            # If overlapping groups remain (share chains), treat as single complex
+            for i in range(len(maximal_groups)):
+                for j in range(i+1, len(maximal_groups)):
+                    if set(maximal_groups[i]).intersection(set(maximal_groups[j])):
+                        return [chain_info]
             # Map groups to chain_info
-            if len(unique_groups) >= 2:
+            if len(maximal_groups) >= 2:
                 complexes: List[Dict] = []
-                for grp in unique_groups:
+                for grp in maximal_groups:
                     complex_chains: Dict = {}
                     for cid in grp:
                         if cid in chain_info:
@@ -279,6 +324,122 @@ class pMHCITCRAnalyzer:
             return [chain_info]
         except Exception:
             return [chain_info]
+
+    def _has_header_section(self, pdb_file: str) -> bool:
+        """Detect whether the file has a PDB header section before ATOM/HETATM lines."""
+        try:
+            with open(pdb_file, 'r') as fh:
+                for line in fh:
+                    rec = line[:6]
+                    if rec.startswith('ATOM') or rec.startswith('HETATM'):
+                        return False
+                    if rec.startswith('HEADER') or rec.startswith('TITLE') or rec.startswith('COMPND') or rec.startswith('REMARK') or rec.startswith('DBREF') or rec.startswith('SEQRES'):
+                        return True
+        except Exception:
+            return False
+        return False
+
+    def _extract_header_chain_annotations(self, pdb_file: str) -> Dict[str, str]:
+        """
+        Extract chain type hints from PDB header (COMPND, DBREF, etc.).
+        Returns a mapping of chain_id -> chain_type.
+        """
+        annotations: Dict[str, str] = {}
+        try:
+            current_mol = None
+            mol_to_chains: Dict[str, List[str]] = {}
+            mol_to_desc: Dict[str, str] = {}
+            with open(pdb_file, 'r') as fh:
+                for line in fh:
+                    if line.startswith('ATOM') or line.startswith('HETATM'):
+                        break
+                    if line.startswith('COMPND'):
+                        content = line[10:].strip()
+                        # Parse MOL_ID
+                        if 'MOL_ID:' in content:
+                            parts = content.split('MOL_ID:')
+                            rest = parts[1].strip()
+                            current_mol = rest.split(';')[0].strip()
+                        if 'MOLECULE:' in content and current_mol is not None:
+                            desc = content.split('MOLECULE:')[1].strip()
+                            desc = desc.split(';')[0].strip()
+                            mol_to_desc[current_mol] = mol_to_desc.get(current_mol, '') + ' ' + desc
+                        if 'CHAIN:' in content and current_mol is not None:
+                            chains_field = content.split('CHAIN:')[1].strip()
+                            chains_field = chains_field.split(';')[0]
+                            chains = [c.strip() for c in chains_field.replace('.', '').split(',') if c.strip()]
+                            mol_to_chains.setdefault(current_mol, [])
+                            for c in chains:
+                                if c and c[0].isalpha():
+                                    mol_to_chains[current_mol].append(c[0])
+                    elif line.startswith('DBREF'):
+                        # Example: DBREF  1ZGL A ... UNP P01903 2DRA_HUMAN
+                        chain_id = line[12].strip()
+                        db = line[26:32].strip()
+                        acc = line[33:41].strip()
+                        db_id = line[42:].strip().upper()
+                        mapped = self._map_dbref_to_type(db_id)
+                        if mapped:
+                            annotations[chain_id] = mapped
+            # Map COMPND molecules to types
+            for mol_id, chains in mol_to_chains.items():
+                desc = mol_to_desc.get(mol_id, '').upper()
+                mapped = self._map_molecule_desc_to_type(desc)
+                if mapped:
+                    for cid in chains:
+                        annotations.setdefault(cid, mapped)
+        except Exception:
+            return annotations
+        return annotations
+
+    def _map_molecule_desc_to_type(self, desc: str) -> Optional[str]:
+        """Map COMPND MOLECULE description to chain type for MHC-I."""
+        if not desc:
+            return None
+        if ('T-CELL' in desc or 'T CELL' in desc) and 'RECEPTOR' in desc:
+            if 'ALPHA' in desc:
+                return 'tcr_alpha'
+            if 'BETA' in desc:
+                return 'tcr_beta'
+        if 'BETA-2-MICROGLOBULIN' in desc or 'BETA 2-MICROGLOBULIN' in desc or 'B2M' in desc:
+            return 'b2m'
+        if 'HLA' in desc and ('CLASS I' in desc or 'A*' in desc or 'B*' in desc or 'C*' in desc):
+            return 'mhc_heavy'
+        if 'PEPTIDE' in desc or 'ANTIGEN' in desc or 'EPITOPE' in desc:
+            return 'peptide'
+        return None
+
+    def _map_dbref_to_type(self, db_id: str) -> Optional[str]:
+        """Map DBREF db_id (e.g., UNP name) to chain type for MHC-I."""
+        if not db_id:
+            return None
+        if 'B2M' in db_id or 'MICROGLOBULIN' in db_id:
+            return 'b2m'
+        if 'TRAC' in db_id or 'TRA' in db_id or 'TRAV' in db_id or 'TCRA' in db_id:
+            return 'tcr_alpha'
+        if 'TRBC' in db_id or 'TRB' in db_id or 'TRBV' in db_id or 'TCRB' in db_id:
+            return 'tcr_beta'
+        if 'HLA-A' in db_id or 'HLA-B' in db_id or 'HLA-C' in db_id or 'HLA' in db_id:
+            return 'mhc_heavy'
+        return None
+
+    def _validate_single_complex_expectations(self, assignments: Dict[str, str]) -> None:
+        """
+        Validate minimal expectations for a single MHC-I complex when no header is present.
+        Raise a RuntimeError with a warning message if expectations are not met.
+        """
+        # Minimal expected: at least one mhc_heavy, one b2m, one peptide, one tcr_alpha, one tcr_beta
+        required = ['mhc_heavy', 'b2m', 'peptide', 'tcr_alpha', 'tcr_beta']
+        present = {t: False for t in required}
+        for v in assignments.values():
+            base = v.split('_complex')[0]
+            if base in present:
+                present[base] = True
+        if not all(present.values()):
+            missing = [k for k, ok in present.items() if not ok]
+            raise RuntimeError(
+                f"No header found; expected a single pMHC-I-TCR complex, but missing required components: {', '.join(missing)}"
+            )
     
     def _extract_chain_info(self, structure: Structure) -> Dict:
         """
@@ -437,6 +598,80 @@ class pMHCITCRAnalyzer:
         
         # Post-process to ensure we have reasonable assignments
         assignments = self._validate_assignments(assignments, chain_info)
+
+        # Enforce exactly one of each required component per complex
+        try:
+            required_types = ['mhc_heavy', 'b2m', 'peptide', 'tcr_alpha', 'tcr_beta']
+
+            # 1) Resolve duplicates by keeping best-scoring candidate for that type
+            for req in required_types:
+                candidates = [cid for cid, atype in assignments.items() if atype == req]
+                if len(candidates) > 1:
+                    # Keep highest score for the required type
+                    best_cid = max(candidates, key=lambda cid: chain_scores.get(cid, {}).get(req, 0.0))
+                    for cid in candidates:
+                        if cid != best_cid:
+                            assignments[cid] = 'unknown'
+
+            # 2) Fill missing required components using scores from unknown pool
+            def fill_missing(req_type: str, score_threshold: float = 0.25):
+                present = any(atype == req_type for atype in assignments.values())
+                if present:
+                    return
+                unknowns = [cid for cid, atype in assignments.items() if atype == 'unknown']
+                if not unknowns:
+                    return
+                best_cid = None
+                best_score = -1.0
+                for cid in unknowns:
+                    score = chain_scores.get(cid, {}).get(req_type, 0.0)
+                    if score > best_score:
+                        best_score = score
+                        best_cid = cid
+                if best_cid is not None and best_score >= score_threshold:
+                    assignments[best_cid] = req_type
+
+            for req in required_types:
+                fill_missing(req)
+
+            # 3) Fallback by length heuristics if still missing
+            def pick_by_length(req_type: str):
+                present = any(atype == req_type for atype in assignments.values())
+                if present:
+                    return
+                unknowns = [(cid, chain_info[cid]['length']) for cid, atype in assignments.items() if atype == 'unknown']
+                if not unknowns:
+                    return
+                chosen = None
+                if req_type == 'peptide':
+                    # Shortest unknown under 20
+                    cand = [u for u in unknowns if u[1] < 20]
+                    chosen = min(cand, key=lambda x: x[1]) if cand else None
+                elif req_type == 'b2m':
+                    # In 90-110 window, closest to 99
+                    cand = [u for u in unknowns if 90 <= u[1] <= 110]
+                    chosen = min(cand, key=lambda x: abs(x[1]-99)) if cand else None
+                elif req_type == 'mhc_heavy':
+                    # Longest unknown over 250
+                    cand = [u for u in unknowns if u[1] > 250]
+                    chosen = max(cand, key=lambda x: x[1]) if cand else None
+                elif req_type == 'tcr_alpha':
+                    # 170-230, prefer shorter
+                    cand = [u for u in unknowns if 170 <= u[1] <= 230]
+                    chosen = min(cand, key=lambda x: x[1]) if cand else None
+                elif req_type == 'tcr_beta':
+                    # 230-290, prefer mid-range
+                    cand = [u for u in unknowns if 230 <= u[1] <= 290]
+                    chosen = min(cand, key=lambda x: abs(x[1]-255)) if cand else None
+                if chosen:
+                    assignments[chosen[0]] = req_type
+
+            for req in required_types:
+                pick_by_length(req)
+
+        except Exception:
+            # If any enforcement fails, proceed with current assignments
+            pass
         
         return assignments
     

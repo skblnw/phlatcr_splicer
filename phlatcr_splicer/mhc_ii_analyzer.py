@@ -212,12 +212,19 @@ class pMHCIITCRAnalyzer:
             for chain_id, info in chain_info.items():
                 print(f"  Chain {chain_id}: {len(info['sequence'])} residues")
         
-        # Try REMARK-based grouping first (REMARK 350 chain groups)
-        complexes = self._detect_complexes_from_remarks(pdb_file, chain_info)
+        # Scenario detection based on header presence
+        header_present = self._has_header_section(pdb_file)
+        header_preassignments = self._extract_header_chain_annotations(pdb_file) if header_present else {}
         
-        # Fall back to existing heuristics if no usable groups were found
-        if len(complexes) <= 1:
-            complexes = self._detect_complexes(chain_info, structure)
+        # If header exists, prefer REMARK-based grouping; else assume single complex
+        if header_present:
+            # Try REMARK-based grouping first (REMARK 350 chain groups)
+            complexes = self._detect_complexes_from_remarks(pdb_file, chain_info)
+            # Fall back to existing heuristics if no usable groups were found
+            if len(complexes) <= 1:
+                complexes = self._detect_complexes(chain_info, structure)
+        else:
+            complexes = [chain_info]
         
         if self.verbose and len(complexes) > 1:
             print(f"\nDetected {len(complexes)} complexes:")
@@ -228,9 +235,32 @@ class pMHCIITCRAnalyzer:
         # Classify chains within each complex
         if len(complexes) > 1:
             chain_assignments = self._classify_multiple_complexes(complexes)
+            # Apply header-based preassignments if available
+            if header_preassignments:
+                chain_to_complex = {}
+                for idx, comp in enumerate(complexes, start=1):
+                    for cid in comp.keys():
+                        chain_to_complex[cid] = idx
+                for cid, ctype in header_preassignments.items():
+                    if cid in chain_assignments:
+                        base = ctype
+                        comp_idx = chain_to_complex.get(cid)
+                        if comp_idx is not None:
+                            chain_assignments[cid] = f"{base}_complex{comp_idx}"
+                        else:
+                            chain_assignments[cid] = base
         else:
             # Single complex - use original logic
             chain_assignments = self._classify_chains(chain_info)
+            # Apply header-based preassignments if available
+            if header_preassignments:
+                for cid, ctype in header_preassignments.items():
+                    if cid in chain_assignments:
+                        chain_assignments[cid] = ctype
+        
+        # If no header present (likely predicted single complex), validate and warn on failure
+        if not header_present:
+            self._validate_single_complex_expectations(chain_assignments)
         
         if self.verbose:
             print("\nFinal chain assignments:")
@@ -282,6 +312,122 @@ class pMHCIITCRAnalyzer:
             return [chain_info]
         except Exception:
             return [chain_info]
+
+    def _has_header_section(self, pdb_file: str) -> bool:
+        """Detect whether the file has a PDB header section before ATOM/HETATM lines."""
+        try:
+            with open(pdb_file, 'r') as fh:
+                for line in fh:
+                    rec = line[:6]
+                    if rec.startswith('ATOM') or rec.startswith('HETATM'):
+                        return False
+                    if rec.startswith('HEADER') or rec.startswith('TITLE') or rec.startswith('COMPND') or rec.startswith('REMARK') or rec.startswith('DBREF') or rec.startswith('SEQRES'):
+                        return True
+        except Exception:
+            return False
+        return False
+
+    def _extract_header_chain_annotations(self, pdb_file: str) -> Dict[str, str]:
+        """
+        Extract chain type hints from PDB header (COMPND, DBREF, etc.).
+        Returns a mapping of chain_id -> chain_type.
+        """
+        annotations: Dict[str, str] = {}
+        try:
+            current_mol = None
+            mol_to_chains: Dict[str, List[str]] = {}
+            mol_to_desc: Dict[str, str] = {}
+            with open(pdb_file, 'r') as fh:
+                for line in fh:
+                    if line.startswith('ATOM') or line.startswith('HETATM'):
+                        break
+                    if line.startswith('COMPND'):
+                        content = line[10:].strip()
+                        # Parse MOL_ID
+                        if 'MOL_ID:' in content:
+                            parts = content.split('MOL_ID:')
+                            rest = parts[1].strip()
+                            current_mol = rest.split(';')[0].strip()
+                        if 'MOLECULE:' in content and current_mol is not None:
+                            desc = content.split('MOLECULE:')[1].strip()
+                            desc = desc.split(';')[0].strip()
+                            mol_to_desc[current_mol] = mol_to_desc.get(current_mol, '') + ' ' + desc
+                        if 'CHAIN:' in content and current_mol is not None:
+                            chains_field = content.split('CHAIN:')[1].strip()
+                            chains_field = chains_field.split(';')[0]
+                            chains = [c.strip() for c in chains_field.replace('.', '').split(',') if c.strip()]
+                            mol_to_chains.setdefault(current_mol, [])
+                            for c in chains:
+                                if c and c[0].isalpha():
+                                    mol_to_chains[current_mol].append(c[0])
+                    elif line.startswith('DBREF'):
+                        # DBREF lines include chain and DB identifiers
+                        chain_id = line[12].strip()
+                        db_id = line[42:].strip().upper()
+                        mapped = self._map_dbref_to_type(db_id)
+                        if mapped:
+                            annotations[chain_id] = mapped
+            # Map COMPND molecules to types
+            for mol_id, chains in mol_to_chains.items():
+                desc = mol_to_desc.get(mol_id, '').upper()
+                mapped = self._map_molecule_desc_to_type(desc)
+                if mapped:
+                    for cid in chains:
+                        annotations.setdefault(cid, mapped)
+        except Exception:
+            return annotations
+        return annotations
+
+    def _map_molecule_desc_to_type(self, desc: str) -> Optional[str]:
+        """Map COMPND MOLECULE description to chain type for MHC-II."""
+        if not desc:
+            return None
+        if ('T-CELL' in desc or 'T CELL' in desc) and 'RECEPTOR' in desc:
+            if 'ALPHA' in desc:
+                return 'tcr_alpha'
+            if 'BETA' in desc:
+                return 'tcr_beta'
+        if 'HLA-DR' in desc or 'HLA-DQ' in desc or 'HLA-DP' in desc or 'MHC CLASS II' in desc or 'CLASS II' in desc:
+            # Need to distinguish α vs β later; COMPND may list separately
+            if 'ALPHA' in desc:
+                return 'mhc_ii_alpha'
+            if 'BETA' in desc:
+                return 'mhc_ii_beta'
+        if 'PEPTIDE' in desc or 'ANTIGEN' in desc or 'EPITOPE' in desc:
+            return 'peptide'
+        return None
+
+    def _map_dbref_to_type(self, db_id: str) -> Optional[str]:
+        """Map DBREF db_id (e.g., UNP name) to chain type for MHC-II."""
+        if not db_id:
+            return None
+        if 'TRAC' in db_id or 'TRA' in db_id or 'TRAV' in db_id or 'TCRA' in db_id:
+            return 'tcr_alpha'
+        if 'TRBC' in db_id or 'TRB' in db_id or 'TRBV' in db_id or 'TCRB' in db_id:
+            return 'tcr_beta'
+        if 'HLA-DRA' in db_id or 'DRA_' in db_id or 'HLA-DQA' in db_id or 'HLA-DPA' in db_id or 'HLA-D' in db_id and 'A' in db_id:
+            return 'mhc_ii_alpha'
+        if 'HLA-DRB' in db_id or 'DRB_' in db_id or 'HLA-DQB' in db_id or 'HLA-DPB' in db_id or 'HLA-D' in db_id and 'B' in db_id:
+            return 'mhc_ii_beta'
+        return None
+
+    def _validate_single_complex_expectations(self, assignments: Dict[str, str]) -> None:
+        """
+        Validate minimal expectations for a single MHC-II complex when no header is present.
+        Raise a RuntimeError with a warning message if expectations are not met.
+        """
+        # Minimal expected: at least one mhc_ii_alpha, one mhc_ii_beta, one peptide, one tcr_alpha, one tcr_beta
+        required = ['mhc_ii_alpha', 'mhc_ii_beta', 'peptide', 'tcr_alpha', 'tcr_beta']
+        present = {t: False for t in required}
+        for v in assignments.values():
+            base = v.split('_complex')[0]
+            if base in present:
+                present[base] = True
+        if not all(present.values()):
+            missing = [k for k, ok in present.items() if not ok]
+            raise RuntimeError(
+                f"No header found; expected a single pMHC-II-TCR complex, but missing required components: {', '.join(missing)}"
+            )
     
     def _extract_chain_info(self, structure: Structure) -> Dict:
         """

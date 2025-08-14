@@ -194,10 +194,12 @@ class pMHCITCRAnalyzer:
         
         # If header exists, prefer REMARK-based grouping; else assume single complex
         if header_present:
-            # Try to detect complexes from REMARK hints first (e.g., REMARK 350 chains groups)
+            # Count REMARK 350 chain-group lines; if present, trust REMARK grouping even if single set
+            remark_group_count = self._count_remark350_groups(pdb_file)
+            # Try to detect complexes from REMARK hints first (e.g., REMARK 350 chain groups)
             complexes = self._detect_complexes_from_remarks(pdb_file, chain_info)
-            # If REMARKs did not provide grouping, fall back to existing heuristics
-            if len(complexes) <= 1:
+            # Only fall back to heuristics if there were no REMARK groups at all
+            if remark_group_count == 0:
                 complexes = self._detect_complexes(chain_info, structure)
         else:
             complexes = [chain_info]
@@ -324,6 +326,18 @@ class pMHCITCRAnalyzer:
             return [chain_info]
         except Exception:
             return [chain_info]
+
+    def _count_remark350_groups(self, pdb_file: str) -> int:
+        """Count the number of REMARK 350 lines that apply to chains."""
+        count = 0
+        try:
+            with open(pdb_file, 'r') as fh:
+                for line in fh:
+                    if line.startswith('REMARK 350') and 'APPLY THE FOLLOWING TO CHAINS:' in line:
+                        count += 1
+        except Exception:
+            return 0
+        return count
 
     def _has_header_section(self, pdb_file: str) -> bool:
         """Detect whether the file has a PDB header section before ATOM/HETATM lines."""
@@ -1053,8 +1067,8 @@ class pMHCITCRAnalyzer:
         strong_b2m = len([s for _, s in potential_types['b2m'] if s > 0.6])
         strong_mhc = len([s for _, s in potential_types['mhc_heavy'] if s > 0.6])
         
-        # Estimate number of complexes
-        num_complexes = max(strong_peptides, strong_b2m, strong_mhc, 1)
+        # Estimate number of complexes (peptide+b2m are most reliable for MHC-I)
+        num_complexes = max(strong_peptides, strong_b2m, 1)
         
         if num_complexes == 1:
             return [chain_info]
@@ -1066,10 +1080,10 @@ class pMHCITCRAnalyzer:
         for i in range(num_complexes):
             complex_chains = {}
             
-            # Assign one of each unique type per complex, but be more flexible for MHC
+            # Assign one of each unique type per complex, but be conservative with MHC heavy
             for unique_type in ['peptide', 'b2m', 'mhc_heavy']:
                 candidates = potential_types[unique_type]
-                score_threshold = 0.3 if unique_type != 'mhc_heavy' else 0.1  # Lower threshold for MHC
+                score_threshold = 0.3 if unique_type != 'mhc_heavy' else 0.4  # Require higher confidence for MHC heavy
                 for chain_id, score in candidates:
                     if chain_id not in assigned_chains and score > score_threshold:
                         complex_chains[chain_id] = chain_info[chain_id]
@@ -1105,9 +1119,12 @@ class pMHCITCRAnalyzer:
         # Add any remaining unassigned chains to complexes
         for chain_id in chain_info:
             if chain_id not in assigned_chains:
-                # Add to the smallest complex
-                smallest_idx = min(range(len(complexes)), key=lambda i: len(complexes[i]))
-                complexes[smallest_idx][chain_id] = chain_info[chain_id]
+                # If only one complex so far, attach remaining chains there; else add to smallest
+                if len(complexes) == 1:
+                    complexes[0][chain_id] = chain_info[chain_id]
+                else:
+                    smallest_idx = min(range(len(complexes)), key=lambda i: len(complexes[i]))
+                    complexes[smallest_idx][chain_id] = chain_info[chain_id]
         
         # Filter out empty complexes
         complexes = [c for c in complexes if c]

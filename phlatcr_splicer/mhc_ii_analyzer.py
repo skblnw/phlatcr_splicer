@@ -16,6 +16,7 @@ Author: AI Assistant
 from typing import Dict, List, Tuple, Optional, Set
 from collections import defaultdict
 import numpy as np
+import warnings
 
 try:
     from Bio.PDB import PDBParser, Structure, Structure, Model, Chain, Residue
@@ -268,6 +269,9 @@ class pMHCIITCRAnalyzer:
             for chain_id in sorted(chain_assignments.keys()):
                 print(f"  Chain {chain_id}: {chain_assignments[chain_id]}")
         
+        # Emit warnings if required components are missing (per complex)
+        self._emit_component_warnings(chain_assignments)
+        
         return chain_assignments
 
     def _detect_complexes_from_remarks(self, pdb_file: str, chain_info: Dict) -> List[Dict]:
@@ -427,6 +431,41 @@ class pMHCIITCRAnalyzer:
             missing = [k for k, ok in present.items() if not ok]
             raise RuntimeError(
                 f"No header found; expected a single pMHC-II-TCR complex, but missing required components: {', '.join(missing)}"
+            )
+    
+    def _emit_component_warnings(self, assignments: Dict[str, str]) -> None:
+        """
+        Issue warnings if any complex is missing required components.
+        This runs regardless of header presence, but does not raise.
+        """
+        required = ['mhc_ii_alpha', 'mhc_ii_beta', 'peptide', 'tcr_alpha', 'tcr_beta']
+        # Group by complex index parsed from suffix _complexN (default to 1)
+        complexes: Dict[int, Dict[str, bool]] = defaultdict(lambda: {t: False for t in required})
+        for chain_id, ctype in assignments.items():
+            base = ctype.split('_complex')[0]
+            comp_idx = 1
+            if '_complex' in ctype:
+                try:
+                    comp_idx = int(ctype.split('_complex')[-1])
+                except Exception:
+                    comp_idx = 1
+            if base in complexes[comp_idx]:
+                complexes[comp_idx][base] = True
+        # Emit warnings for any missing components
+        missing_summary = {}
+        for idx, present in complexes.items():
+            missing = [t for t, ok in present.items() if not ok]
+            if missing:
+                missing_summary[idx] = missing
+                warnings.warn(
+                    f"MHC-II complex {idx} missing required component(s): {', '.join(missing)}",
+                    UserWarning
+                )
+        # If anything missing anywhere, stop and raise an error
+        if missing_summary:
+            parts = [f"complex {idx}: {', '.join(miss)}" for idx, miss in sorted(missing_summary.items())]
+            raise RuntimeError(
+                "Missing required component(s) in MHC-II analysis (" + "; ".join(parts) + ")"
             )
     
     def _extract_chain_info(self, structure: Structure) -> Dict:

@@ -33,7 +33,7 @@ class pMHCITCRAnalyzer:
     Main class for analyzing pHLA-TCR complex structures.
     """
     
-    def __init__(self, verbose: bool = True):
+    def __init__(self, verbose: bool = False):
         """
         Initialize the analyzer.
         
@@ -41,7 +41,7 @@ class pMHCITCRAnalyzer:
             verbose: Whether to print verbose output
         """
         self.verbose = verbose
-        self.parser = PDBParser(QUIET=not verbose)
+        self.parser = PDBParser(QUIET=True)
         
         # Define known sequence patterns and characteristics
         self.mhc_patterns = self._load_mhc_patterns()
@@ -515,10 +515,10 @@ class pMHCITCRAnalyzer:
                 chain_id = chain.get_id()
                 
                 # Extract sequence
-                sequence = self._get_chain_sequence(chain)
+                sequence = self._extract_sequence(chain)
                 
                 # Calculate basic properties
-                properties = self._calculate_chain_properties(sequence, chain)
+                properties = self._calculate_properties(sequence, chain)
                 
                 chain_info[chain_id] = {
                     'sequence': sequence,
@@ -529,7 +529,7 @@ class pMHCITCRAnalyzer:
         
         return chain_info
     
-    def _get_chain_sequence(self, chain: Chain) -> str:
+    def _extract_sequence(self, chain: Chain) -> str:
         """
         Extract amino acid sequence from a chain.
         
@@ -561,7 +561,7 @@ class pMHCITCRAnalyzer:
         }
         return conversion.get(three_letter.upper(), '')
     
-    def _calculate_chain_properties(self, sequence: str, chain: Chain) -> Dict:
+    def _calculate_properties(self, sequence: str, chain: Chain = None) -> Dict:
         """
         Calculate various properties of a protein chain.
         
@@ -1362,36 +1362,23 @@ class pMHCITCRAnalyzer:
 
 def main():
     """Command-line interface for the analyzer."""
-    import argparse
+    import sys
     
-    parser = argparse.ArgumentParser(
-        description="Analyze pHLA-TCR complex PDB structures"
-    )
-    parser.add_argument("pdb_file", help="Input PDB file")
-    parser.add_argument("-o", "--output", help="Output report file")
-    parser.add_argument("-v", "--verbose", action="store_true", 
-                       help="Verbose output")
+    if len(sys.argv) != 2:
+        print("Usage: python mhc_i_analyzer.py <pdb_file>")
+        sys.exit(1)
     
-    args = parser.parse_args()
-    
-    # Initialize analyzer
-    analyzer = pMHCITCRAnalyzer(verbose=args.verbose)
+    pdb_file = sys.argv[1]
     
     try:
-        # Analyze the PDB file
-        assignments = analyzer.analyze_pdb(args.pdb_file)
+        analyzer = pMHCITCRAnalyzer(verbose=True)
+        assignments = analyzer.analyze_pdb(pdb_file)
         
-        # Print results in alphabetical order
         print("\nFinal Chain Assignments:")
         print("-" * 30)
         for chain_id in sorted(assignments.keys()):
             print(f"Chain {chain_id}: {assignments[chain_id]}")
         
-        # Save report if requested
-        if args.output:
-            analyzer.save_analysis_report(assignments, args.output)
-            print(f"\nReport saved to: {args.output}")
-            
     except Exception as e:
         print(f"Error: {e}")
         sys.exit(1)

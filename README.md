@@ -63,12 +63,14 @@ python scripts/main.py --help
 
 ### 2. Individual Console Commands
 
+Both analyzers now have consistent, simplified interfaces:
+
 ```bash
 # MHC-I analyzer
-phlatcr-analyze input.pdb --verbose
+phlatcr-analyze input.pdb
 
 # MHC-II analyzer  
-mhc-ii-analyze input.pdb --verbose
+mhc-ii-analyze input.pdb
 ```
 
 ### 3. Python API

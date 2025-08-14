@@ -219,10 +219,12 @@ class pMHCIITCRAnalyzer:
         
         # If header exists, prefer REMARK-based grouping; else assume single complex
         if header_present:
+            # Count REMARK 350 chain-group lines; if present, trust REMARK grouping even if single set
+            remark_group_count = self._count_remark350_groups(pdb_file)
             # Try REMARK-based grouping first (REMARK 350 chain groups)
             complexes = self._detect_complexes_from_remarks(pdb_file, chain_info)
-            # Fall back to existing heuristics if no usable groups were found
-            if len(complexes) <= 1:
+            # Only fall back to heuristics if there were no REMARK groups at all
+            if remark_group_count == 0:
                 complexes = self._detect_complexes(chain_info, structure)
         else:
             complexes = [chain_info]
@@ -236,28 +238,16 @@ class pMHCIITCRAnalyzer:
         # Classify chains within each complex
         if len(complexes) > 1:
             chain_assignments = self._classify_multiple_complexes(complexes)
-            # Apply header-based preassignments if available
+            # Apply header-based preassignments if available (with sanity checks)
             if header_preassignments:
-                chain_to_complex = {}
-                for idx, comp in enumerate(complexes, start=1):
-                    for cid in comp.keys():
-                        chain_to_complex[cid] = idx
-                for cid, ctype in header_preassignments.items():
-                    if cid in chain_assignments:
-                        base = ctype
-                        comp_idx = chain_to_complex.get(cid)
-                        if comp_idx is not None:
-                            chain_assignments[cid] = f"{base}_complex{comp_idx}"
-                        else:
-                            chain_assignments[cid] = base
+                chain_assignments = self._apply_header_preassignments(chain_assignments, complexes, chain_info, header_preassignments)
         else:
             # Single complex - use original logic
             chain_assignments = self._classify_chains(chain_info)
             # Apply header-based preassignments if available
             if header_preassignments:
-                for cid, ctype in header_preassignments.items():
-                    if cid in chain_assignments:
-                        chain_assignments[cid] = ctype
+                single_complexes = [chain_info]
+                chain_assignments = self._apply_header_preassignments(chain_assignments, single_complexes, chain_info, header_preassignments)
         
         # If no header present (likely predicted single complex), validate and warn on failure
         if not header_present:
@@ -270,9 +260,57 @@ class pMHCIITCRAnalyzer:
                 print(f"  Chain {chain_id}: {chain_assignments[chain_id]}")
         
         # Emit warnings if required components are missing (per complex)
-        self._emit_component_warnings(chain_assignments)
+        self._emit_component_warnings(chain_assignments, header_preassignments)
         
         return chain_assignments
+
+    def _apply_header_preassignments(self, chain_assignments: Dict[str, str], complexes: List[Dict], chain_info: Dict, header_preassignments: Dict[str, str]) -> Dict[str, str]:
+        """Apply header annotations cautiously: only when length-consistent and helpful.
+        - Do not override a non-unknown assignment unless types match and are consistent by length
+        - For peptides, ensure chain length <= 30
+        - For MHC-II alpha/beta, ensure lengths are in broad expected ranges
+        - For TCR alpha/beta, ensure lengths are roughly in expected ranges
+        """
+        # Build reverse map chain -> complex index
+        chain_to_complex = {}
+        for idx, comp in enumerate(complexes, start=1):
+            for cid in comp.keys():
+                chain_to_complex[cid] = idx
+        
+        def length_ok(ctype: str, length: int) -> bool:
+            if ctype == 'peptide':
+                return length <= 30
+            if ctype == 'mhc_ii_alpha':
+                return 160 <= length <= 230
+            if ctype == 'mhc_ii_beta':
+                return 160 <= length <= 240
+            if ctype == 'tcr_alpha':
+                # Accept full (180-240) and V-domain-only (100-160)
+                return (170 <= length <= 240) or (100 <= length <= 160)
+            if ctype == 'tcr_beta':
+                # Accept full (230-320) and V-domain-only (100-170)
+                return (230 <= length <= 320) or (100 <= length <= 170)
+            return True
+        
+        updated = dict(chain_assignments)
+        for cid, annotated_type in header_preassignments.items():
+            if cid not in updated or cid not in chain_info:
+                continue
+            current = updated[cid]
+            length = chain_info[cid]['length']
+            if not length_ok(annotated_type, length):
+                continue
+            # Apply only if current is unknown or matches annotated type
+            base_current = current.split('_complex')[0]
+            if base_current == 'unknown' or base_current == annotated_type:
+                comp_idx = chain_to_complex.get(cid)
+                if comp_idx is not None and '_complex' in current:
+                    updated[cid] = f"{annotated_type}_complex{comp_idx}"
+                elif comp_idx is not None and len(complexes) > 1:
+                    updated[cid] = f"{annotated_type}_complex{comp_idx}"
+                else:
+                    updated[cid] = annotated_type
+        return updated
 
     def _detect_complexes_from_remarks(self, pdb_file: str, chain_info: Dict) -> List[Dict]:
         """
@@ -295,6 +333,7 @@ class pMHCIITCRAnalyzer:
                         chains = [tok[0] for tok in raw_tokens if len(tok) > 0]
                         if len(chains) >= 4:
                             groups.append(chains)
+            # Deduplicate identical groups
             unique_groups: List[List[str]] = []
             seen = set()
             for grp in groups:
@@ -302,9 +341,26 @@ class pMHCIITCRAnalyzer:
                 if key not in seen:
                     seen.add(key)
                     unique_groups.append(grp)
-            if len(unique_groups) >= 2:
+            # Remove subset groups (keep only maximal sets)
+            maximal_groups: List[List[str]] = []
+            unique_sets = [set(g) for g in unique_groups]
+            for i, s in enumerate(unique_sets):
+                is_subset = False
+                for j, t in enumerate(unique_sets):
+                    if i != j and s.issubset(t):
+                        is_subset = True
+                        break
+                if not is_subset:
+                    maximal_groups.append(sorted(list(s)))
+            # If overlapping groups remain (share chains), treat as single complex
+            for i in range(len(maximal_groups)):
+                for j in range(i+1, len(maximal_groups)):
+                    if set(maximal_groups[i]).intersection(set(maximal_groups[j])):
+                        return [chain_info]
+            # Map groups to chain_info
+            if len(maximal_groups) >= 2:
                 complexes: List[Dict] = []
-                for grp in unique_groups:
+                for grp in maximal_groups:
                     complex_chains: Dict = {}
                     for cid in grp:
                         if cid in chain_info:
@@ -316,6 +372,18 @@ class pMHCIITCRAnalyzer:
             return [chain_info]
         except Exception:
             return [chain_info]
+
+    def _count_remark350_groups(self, pdb_file: str) -> int:
+        """Count the number of REMARK 350 lines that apply to chains."""
+        count = 0
+        try:
+            with open(pdb_file, 'r') as fh:
+                for line in fh:
+                    if line.startswith('REMARK 350') and 'APPLY THE FOLLOWING TO CHAINS:' in line:
+                        count += 1
+        except Exception:
+            return 0
+        return count
 
     def _has_header_section(self, pdb_file: str) -> bool:
         """Detect whether the file has a PDB header section before ATOM/HETATM lines."""
@@ -386,10 +454,16 @@ class pMHCIITCRAnalyzer:
         """Map COMPND MOLECULE description to chain type for MHC-II."""
         if not desc:
             return None
-        if ('T-CELL' in desc or 'T CELL' in desc) and 'RECEPTOR' in desc:
+        # Accept generic TCR descriptions as well as explicit T-CELL RECEPTOR
+        if ('T-CELL' in desc or 'T CELL' in desc or 'TCR' in desc) and ('RECEPTOR' in desc or 'TCR' in desc or 'CHAIN' in desc):
             if 'ALPHA' in desc:
                 return 'tcr_alpha'
             if 'BETA' in desc:
+                return 'tcr_beta'
+            # Heuristic: "TCR A CHAIN" / "TCR B CHAIN"
+            if ' A CHAIN' in desc or desc.endswith(' TCR A') or ' TCR A ' in desc:
+                return 'tcr_alpha'
+            if ' B CHAIN' in desc or desc.endswith(' TCR B') or ' TCR B ' in desc:
                 return 'tcr_beta'
         if 'HLA-DR' in desc or 'HLA-DQ' in desc or 'HLA-DP' in desc or 'MHC CLASS II' in desc or 'CLASS II' in desc:
             # Need to distinguish α vs β later; COMPND may list separately
@@ -433,12 +507,17 @@ class pMHCIITCRAnalyzer:
                 f"No header found; expected a single pMHC-II-TCR complex, but missing required components: {', '.join(missing)}"
             )
     
-    def _emit_component_warnings(self, assignments: Dict[str, str]) -> None:
+    def _emit_component_warnings(self, assignments: Dict[str, str], header_preassignments: Optional[Dict[str, str]] = None) -> None:
         """
         Issue warnings if any complex is missing required components.
         This runs regardless of header presence, but does not raise.
         """
-        required = ['mhc_ii_alpha', 'mhc_ii_beta', 'peptide', 'tcr_alpha', 'tcr_beta']
+        # Determine if TCR is expected based on header annotations (if provided)
+        expect_tcr = False
+        if header_preassignments:
+            expect_tcr = any(v in ('tcr_alpha', 'tcr_beta') or v.startswith('tcr_') for v in header_preassignments.values())
+        # Always require MHC-II α/β and peptide; require TCR only when header indicates presence
+        required = ['mhc_ii_alpha', 'mhc_ii_beta', 'peptide'] + (['tcr_alpha', 'tcr_beta'] if expect_tcr else [])
         # Group by complex index parsed from suffix _complexN (default to 1)
         complexes: Dict[int, Dict[str, bool]] = defaultdict(lambda: {t: False for t in required})
         for chain_id, ctype in assignments.items():
@@ -607,17 +686,13 @@ class pMHCIITCRAnalyzer:
             potential_types[chain_type].sort(key=lambda x: x[1], reverse=True)
         
         # Enhanced MHC-II complex detection
-        # Each MHC-II complex MUST have: 1 α + 1 β + 1 peptide + 1 TCR α + 1 TCR β
+        # Each MHC-II complex ideally has: 1 α + 1 β + 1 peptide + 1 TCR α + 1 TCR β
         
-        # Count clear peptides (these define the number of complexes most reliably)
+        # Count clear peptides (most reliable for complex count)
         clear_peptides = [cid for cid, score in potential_types['peptide'] if score > 0.8]
         
-        # If we have clear peptides, use that as the base count
-        if clear_peptides:
-            estimated_complexes = len(clear_peptides)
-        else:
-            # Fallback: estimate based on total chain count
-            estimated_complexes = max(1, len(chain_info) // 5)  # 5 chains per MHC-II complex
+        # Estimate number of complexes from peptides; fallback to 1
+        estimated_complexes = len(clear_peptides) if clear_peptides else 1
         
         if self.verbose:
             print(f"MHC-II complex estimation: {estimated_complexes} complexes based on {len(clear_peptides)} clear peptides")

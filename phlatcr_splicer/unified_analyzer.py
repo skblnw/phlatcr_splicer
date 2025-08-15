@@ -311,21 +311,30 @@ class TCRpMHCAnalyzer:
         
         # Handle CIF files with chain ID mapping
         if structure_file.lower().endswith('.cif'):
-            mmcif_dict = MMCIF2Dict(structure_file)
-            label_ids = mmcif_dict.get('_struct_asym.label_asym_id', [])
-            auth_ids = mmcif_dict.get('_struct_asym.auth_asym_id', [])
-            
-            if isinstance(label_ids, str):
-                label_ids = [label_ids]
-            if isinstance(auth_ids, str):
-                auth_ids = [auth_ids]
-            
-            if label_ids and auth_ids and len(label_ids) == len(auth_ids):
-                chain_id_map = dict(zip(label_ids, auth_ids))
+            try:
+                mmcif_dict = MMCIF2Dict(structure_file)
+                label_ids = mmcif_dict.get('_struct_asym.label_asym_id', [])
+                auth_ids = mmcif_dict.get('_struct_asym.auth_asym_id', [])
+                
+                if isinstance(label_ids, str):
+                    label_ids = [label_ids]
+                if isinstance(auth_ids, str):
+                    auth_ids = [auth_ids]
+                
+                if label_ids and auth_ids and len(label_ids) == len(auth_ids):
+                    chain_id_map = dict(zip(label_ids, auth_ids))
+            except (KeyError, ValueError):
+                # If CIF parsing fails, continue without chain mapping
+                pass
         
         # Parse structure
         parser = self.cif_parser if structure_file.lower().endswith('.cif') else self.pdb_parser
         structure = parser.get_structure('struct', structure_file)
+        
+        # Check if structure has models
+        if len(structure) == 0:
+            logger.warning(f"No models found in {structure_file}")
+            return {}, chain_id_map
         
         chain_centers = {}
         chain_types = {}

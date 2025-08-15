@@ -253,19 +253,6 @@ Key changes:
 - New parameters for fine-tuning analysis
 - CIF file support added
 
-## 📝 Citation
-
-If you use this tool in your research, please cite:
-
-```bibtex
-@software{phlatcr_splicer,
-  author = {skblnw},
-  title = {pHLA-TCR Splicer: Unified TCR-pMHC Complex Analyzer},
-  year = {2024},
-  url = {https://github.com/skblnw/phlatcr_splicer}
-}
-```
-
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit issues or pull requests.
@@ -278,9 +265,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - Xi'an Jiaotong-Liverpool University (XJTLU) Summer Undergraduate Research Fellowship (SURF)
 - SURF Codes: 1335, 1415
-
-## 📧 Contact
-
-- Author: skblnw
-- Email: skblnw@github.com
-- GitHub: [@skblnw](https://github.com/skblnw)

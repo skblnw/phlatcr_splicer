@@ -99,14 +99,14 @@ def run_analysis(pdb_file: str, analyzer: TCRpMHCAnalyzer, verbose: bool = False
         Dictionary with analysis results
     """
     if verbose:
-        print(f"🧬 Analyzing {os.path.basename(pdb_file)}...")
+        print(f"Analyzing {os.path.basename(pdb_file)}...")
         print("=" * 60)
     
     try:
         results, chain_id_map = analyzer.analyze_pdb(pdb_file)
         
         if not results:
-            print(f"⚠️  No complexes found in {os.path.basename(pdb_file)}")
+            print(f"Warning: No complexes found in {os.path.basename(pdb_file)}")
             return {}
         
         # Process results
@@ -132,7 +132,7 @@ def run_analysis(pdb_file: str, analyzer: TCRpMHCAnalyzer, verbose: bool = False
                     unpaired_tcrs += 1
         
         # Display results
-        print(f"\n📊 Analysis Results for {os.path.basename(pdb_file)}:")
+        print(f"\nAnalysis Results for {os.path.basename(pdb_file)}:")
         print("-" * 50)
         
         for complex_name, complex_data in sorted(results.items()):
@@ -178,7 +178,7 @@ def run_analysis(pdb_file: str, analyzer: TCRpMHCAnalyzer, verbose: bool = False
                     print(f"    Complex #{i}: {tcr_str} :: {mhc_str}")
         
         # Summary
-        print(f"\n✅ Summary:")
+        print(f"\nSummary:")
         print(f"  Total chains identified: {total_chains}")
         print(f"  Total complexes found: {total_complexes}")
         if mhc_i_complexes:
@@ -325,10 +325,10 @@ def main():
             input_files.extend([Path(f) for f in matching])
     
     if not input_files:
-        print(f"❌ No PDB/CIF files found in: {args.input}")
+        print(f"Error: No PDB/CIF files found in: {args.input}")
         sys.exit(1)
     
-    print(f"📁 Found {len(input_files)} file(s) to analyze")
+    print(f"Found {len(input_files)} file(s) to analyze")
     
     # Process files
     all_results = []
@@ -354,16 +354,16 @@ def main():
                     for i, pair in enumerate(complex_data.get('pairs', []), 1):
                         f.write(f"    Complex #{i}: {pair}\n")
                     f.write("\n")
-            print(f"💾 Results saved to {args.output}")
+            print(f"Results saved to {args.output}")
     
     # Generate batch summary if requested
     if args.batch_summary and len(input_files) > 1:
         os.makedirs(args.output_dir, exist_ok=True)
         summary_file = os.path.join(args.output_dir, 'chain_summary.csv')
         write_summary_csv(all_results, summary_file)
-        print(f"📊 Batch summary saved to {summary_file}")
+        print(f"Batch summary saved to {summary_file}")
     
-    print(f"\n✨ Analysis complete! Processed {len(input_files)} file(s)")
+    print(f"\nAnalysis complete! Processed {len(input_files)} file(s)")
 
 
 if __name__ == "__main__":

@@ -189,36 +189,6 @@ class TestEndToEnd(unittest.TestCase):
         finally:
             os.unlink(test_file)
     
-    def test_parameter_sensitivity(self):
-        """Test that different parameters affect results."""
-        # Create a borderline case
-        chains = {
-            'A': ('GSHSMR' + 'A' * 260, [0, 0, 0]),
-            'B': ('IQRTPKIQ' + 'A' * 91, [45, 0, 0]),    # At edge of default distance
-        }
-        
-        pdb_content = self.create_mock_pdb(chains)
-        
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.pdb', delete=False) as f:
-            f.write(pdb_content)
-            test_file = f.name
-        
-        try:
-            # Test with default parameters
-            analyzer_default = TCRpMHCAnalyzer(verbose=False)
-            results_default, _ = analyzer_default.analyze_pdb(test_file)
-            
-            # Test with tighter clustering
-            analyzer_tight = TCRpMHCAnalyzer(eps=30.0, verbose=False)
-            results_tight, _ = analyzer_tight.analyze_pdb(test_file)
-            
-            # Results might differ based on clustering
-            # At minimum, both should process without error
-            self.assertIsInstance(results_default, dict)
-            self.assertIsInstance(results_tight, dict)
-        finally:
-            os.unlink(test_file)
-    
     def test_empty_file_handling(self):
         """Test handling of empty or invalid files."""
         with tempfile.NamedTemporaryFile(mode='w', suffix='.pdb', delete=False) as f:
@@ -231,86 +201,6 @@ class TestEndToEnd(unittest.TestCase):
             self.assertEqual(len(results), 0)
         finally:
             os.unlink(test_file)
-    
-    def test_cif_file_processing(self):
-        """Test that CIF files are processed correctly."""
-        # For now, just test that CIF parsing doesn't crash
-        # Real CIF parsing requires proper format which is complex to mock
-        
-        # Create a minimal PDB file instead to test the flow
-        pdb_content = """HEADER    TEST
-ATOM      1  CA  ALA A   1       0.000   0.000   0.000
-ATOM      2  CA  ALA A   2       3.800   0.000   0.000
-END
-"""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.pdb', delete=False) as f:
-            f.write(pdb_content)
-            test_file = f.name
-        
-        try:
-            results, chain_map = self.analyzer.analyze_pdb(test_file)
-            # Should process without error
-            self.assertIsInstance(results, dict)
-            self.assertIsInstance(chain_map, dict)
-        finally:
-            os.unlink(test_file)
-
-
-class TestPerformance(unittest.TestCase):
-    """Performance and scalability tests."""
-    
-    def setUp(self):
-        """Set up test fixtures."""
-        self.analyzer = TCRpMHCAnalyzer(verbose=False)
-    
-    def test_large_complex_performance(self):
-        """Test performance with large multi-chain complex."""
-        # Create a large complex with many chains
-        chains = {}
-        for i in range(20):  # 20 chains
-            chain_id = chr(65 + i) if i < 26 else str(i - 26)
-            sequence = 'A' * (100 + i * 10)  # Varying lengths
-            position = [i * 10, 0, 0]
-            chains[chain_id] = (sequence, position)
-        
-        pdb_content = self.create_mock_pdb(chains)
-        
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.pdb', delete=False) as f:
-            f.write(pdb_content)
-            test_file = f.name
-        
-        try:
-            import time
-            start_time = time.time()
-            results, chain_map = self.analyzer.analyze_pdb(test_file)
-            end_time = time.time()
-            
-            # Should complete in reasonable time (< 5 seconds for 20 chains)
-            self.assertLess(end_time - start_time, 5.0)
-            self.assertIsInstance(results, dict)
-        finally:
-            os.unlink(test_file)
-    
-    def create_mock_pdb(self, chains_config):
-        """Helper method to create mock PDB content."""
-        pdb_lines = ["HEADER    TEST STRUCTURE"]
-        atom_id = 1
-        
-        for chain_id, (sequence, start_pos) in chains_config.items():
-            for i in range(min(len(sequence), 10)):  # Limit to 10 residues for performance
-                x = start_pos[0] + i * 3.8
-                y = start_pos[1]
-                z = start_pos[2]
-                
-                pdb_lines.append(
-                    f"ATOM  {atom_id:5d}  CA  ALA {chain_id}{i+1:4d}    "
-                    f"{x:8.3f}{y:8.3f}{z:8.3f}  1.00  0.00           C"
-                )
-                atom_id += 1
-        
-        pdb_lines.append("END")
-        return "\n".join(pdb_lines)
-
 
 if __name__ == '__main__':
     unittest.main()

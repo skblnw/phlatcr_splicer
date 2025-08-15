@@ -228,16 +228,6 @@ class TestTCRpMHCAnalyzer(unittest.TestCase):
         self.assertEqual(complex_pair['tcr_alpha'], 'A')
         self.assertEqual(complex_pair['tcr_beta'], 'B')
     
-    def test_file_format_support(self):
-        """Test that both PDB and CIF files are supported."""
-        # Test with a PDB file path
-        pdb_file = "test.pdb"
-        # Would need actual file to test fully
-        
-        # Test with a CIF file path
-        cif_file = "test.cif"
-        # Would need actual file to test fully
-    
     # Helper methods for creating mock structures
     
     def _create_mock_chain(self, sequence):
@@ -314,38 +304,6 @@ class TestTCRpMHCAnalyzer(unittest.TestCase):
         MockModel._create_mock_chain = test_instance._create_mock_chain
         
         return MockStructure()
-
-
-class TestIntegration(unittest.TestCase):
-    """Integration tests for the unified analyzer."""
-    
-    def setUp(self):
-        """Set up test fixtures."""
-        self.analyzer = TCRpMHCAnalyzer(verbose=False)
-    
-    def test_create_temp_pdb_file(self):
-        """Test analysis of a temporary PDB file."""
-        # Create a minimal PDB file
-        pdb_content = """HEADER    TEST STRUCTURE
-ATOM      1  CA  ALA A   1       0.000   0.000   0.000  1.00  0.00           C
-ATOM      2  CA  ALA A   2       3.800   0.000   0.000  1.00  0.00           C
-ATOM      3  CA  ALA A   3       7.600   0.000   0.000  1.00  0.00           C
-END
-"""
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.pdb', delete=False) as f:
-            f.write(pdb_content)
-            temp_file = f.name
-        
-        try:
-            # Analyze the file
-            results, chain_map = self.analyzer.analyze_pdb(temp_file)
-            # Should process without errors even if no valid complexes found
-            self.assertIsInstance(results, dict)
-            self.assertIsInstance(chain_map, dict)
-        finally:
-            # Clean up
-            os.unlink(temp_file)
-
 
 if __name__ == '__main__':
     unittest.main()

@@ -16,9 +16,9 @@ with open("requirements.txt", "r", encoding="utf-8") as fh:
 
 setup(
     name="phlatcr-splicer",
-    version="0.1.0",
-    author="Your Name",
-    author_email="your.email@example.com",
+    version="1.0.0",
+    author="skblnw",
+    author_email="skblnw@github.com",
     description="A Python tool for analyzing pHLA-TCR complex structures",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -54,9 +54,7 @@ setup(
     },
     entry_points={
         "console_scripts": [
-            "phlatcr-splicer=scripts.main:main",                  # Main unified entry point
-            "mhc-i-analyze=phlatcr_splicer.mhc_i_analyzer:main",  # MHC-I specific
-            "mhc-ii-analyze=phlatcr_splicer.mhc_ii_analyzer:main", # MHC-II specific
+            "phlatcr-splicer=scripts.main:main",  # Main unified entry point
         ],
     },
     include_package_data=True,

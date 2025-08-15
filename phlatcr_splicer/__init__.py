@@ -1,18 +1,16 @@
 """
 pHLA-TCR Complex Structure Analyzer
 
-A Python package for analyzing protein complex structure PDB files, 
-specifically designed for pHLA-TCR complexes. This tool identifies 
-and classifies protein chains even when chain IDs are inconsistent.
+A unified Python package for analyzing TCR-pMHC protein complex structures
+from PDB and CIF files. Automatically handles both MHC-I and MHC-II complexes
+using sequence alignment, spatial clustering, and pattern recognition.
 """
 
-from .mhc_i_analyzer import pMHCITCRAnalyzer
-from .mhc_ii_analyzer import pMHCIITCRAnalyzer
+# Import unified analyzer only
+from .unified_analyzer import TCRpMHCAnalyzer
 
-__all__ = ['pMHCITCRAnalyzer', 'pMHCIITCRAnalyzer']
+__all__ = ['TCRpMHCAnalyzer']
 
-__version__ = "0.1.0"
-__author__ = "Your Name"
-__email__ = "your.email@example.com"
-
-__all__ = ["pHLATCRAnalyzer"]
+__version__ = "1.0.0"
+__author__ = "skblnw"
+__email__ = "skblnw@github.com"

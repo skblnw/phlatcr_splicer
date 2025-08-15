@@ -3,423 +3,367 @@
 pHLA-TCR Splicer - Main Entry Point
 ===================================
 
-A unified command-line interface for analyzing protein complex structures.
-Supports both MHC-I (pHLA-TCR) and MHC-II (pMHC-II-TCR) complexes.
+Unified command-line interface for analyzing TCR-pMHC protein complex structures.
+Automatically handles both MHC-I (with B2M) and MHC-II (α/β heterodimer) complexes
+using sequence alignment, spatial clustering, and pattern recognition.
 
 Usage:
-    python main.py --type mhc-i <pdb_file>     # For MHC-I complexes
-    python main.py --type mhc-ii <pdb_file>    # For MHC-II complexes
-    python main.py --auto <pdb_file>           # Auto-detect complex type
+    python main.py <pdb_file>                      # Analyze single file
+    python main.py *.pdb --batch-summary           # Batch analysis
+    python main.py <pdb_file> --verbose            # Verbose output
+    python main.py <pdb_file> --output results.txt # Save to file
+
+Advanced options:
+    python main.py <pdb_file> --eps 45.0           # Tighter clustering
+    python main.py <pdb_file> --align-score 25     # Stricter TCR alignment
 
 Examples:
-    python main.py --type mhc-i 1oga.pdb
-    python main.py --type mhc-ii 4z7u.pdb
-    python main.py --auto complex.pdb --verbose --output results.txt
+    python main.py 1oga.pdb
+    python main.py 4z7u.cif --verbose
+    python main.py data/*.pdb --batch-summary --output-dir results/
+
+Author: skblnw
 """
 
 import argparse
 import sys
 import os
+import csv
 from pathlib import Path
+from typing import Dict, List
+import logging
 
-# Import our analyzers
+# Import our unified analyzer
 try:
-    from phlatcr_splicer import pMHCITCRAnalyzer, pMHCIITCRAnalyzer
+    from phlatcr_splicer import TCRpMHCAnalyzer
 except ImportError:
     # Try adding current directory to path for development
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     try:
-        from phlatcr_splicer import pMHCITCRAnalyzer, pMHCIITCRAnalyzer
+        from phlatcr_splicer import TCRpMHCAnalyzer
     except ImportError:
         print("Error: Could not import phlatcr_splicer package.")
         print("Please run from the project root directory or install with: pip install -e .")
         sys.exit(1)
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
-def detect_complex_type(pdb_file: str, verbose: bool = False) -> str:
-    """
-    Auto-detect whether a PDB file contains MHC-I or MHC-II complexes.
+
+def format_chain_type(chain_type: str) -> str:
+    """Format chain type for display."""
+    type_map = {
+        'TCR_ALPHA': 'TCR-α',
+        'TCR_BETA': 'TCR-β',
+        'MHC_I_ALPHA': 'MHC-I Heavy Chain',
+        'B2M': 'β2-microglobulin',
+        'MHC_II_ALPHA': 'MHC-II α',
+        'MHC_II_BETA': 'MHC-II β',
+        'PEPTIDE': 'Peptide',
+        'UNKNOWN': 'Unknown'
+    }
+    return type_map.get(chain_type, chain_type)
+
+
+def format_complex(complex_data: Dict) -> str:
+    """Format a complex for display."""
+    complex_type = complex_data.get('type', 'Unknown')
     
-    Strategy:
-    1. Look for β2-microglobulin (indicates MHC-I)
-    2. Count peptide lengths (MHC-I: 8-11, MHC-II: 12-25)
-    3. Analyze chain count and composition
+    if complex_type == 'MHC-I':
+        return (f"MHC-I Complex: "
+                f"Heavy[{complex_data.get('mhc_alpha', '-')}] + "
+                f"B2M[{complex_data.get('b2m', '-')}] + "
+                f"Peptide[{complex_data.get('peptide', '-')}]")
+    elif complex_type == 'MHC-II':
+        return (f"MHC-II Complex: "
+                f"α[{complex_data.get('mhc_alpha', '-')}] + "
+                f"β[{complex_data.get('mhc_beta', '-')}] + "
+                f"Peptide[{complex_data.get('peptide', '-')}]")
+    elif complex_type == 'UNPAIRED_TCR':
+        return (f"Unpaired TCR: "
+                f"α[{complex_data.get('tcr_alpha', '-')}] + "
+                f"β[{complex_data.get('tcr_beta', '-')}]")
+    else:
+        return f"Unknown Complex Type: {complex_type}"
+
+
+def run_analysis(pdb_file: str, analyzer: TCRpMHCAnalyzer, verbose: bool = False) -> Dict:
+    """
+    Run analysis on a single PDB file.
+    
+    Returns:
+        Dictionary with analysis results
     """
     if verbose:
-        print("🔍 Auto-detecting complex type...")
+        print(f"🧬 Analyzing {os.path.basename(pdb_file)}...")
+        print("=" * 60)
     
-    # Try both analyzers quickly to see which gives better results
     try:
-        # Test MHC-I analyzer
-        mhc_i_analyzer = pMHCITCRAnalyzer(verbose=False)
-        mhc_i_result = mhc_i_analyzer.analyze_pdb(pdb_file)
+        results, chain_id_map = analyzer.analyze_pdb(pdb_file)
         
-        # Test MHC-II analyzer  
-        mhc_ii_analyzer = pMHCIITCRAnalyzer(verbose=False)
-        mhc_ii_result = mhc_ii_analyzer.analyze_pdb(pdb_file)
+        if not results:
+            print(f"⚠️  No complexes found in {os.path.basename(pdb_file)}")
+            return {}
         
-        # Count successful identifications and unknown chains
-        mhc_i_unknown = sum(1 for chain_type in mhc_i_result.values() if chain_type == 'unknown')
-        mhc_ii_unknown = sum(1 for chain_type in mhc_ii_result.values() if chain_type == 'unknown')
+        # Process results
+        total_chains = 0
+        total_complexes = 0
+        mhc_i_complexes = 0
+        mhc_ii_complexes = 0
+        unpaired_tcrs = 0
         
-        # Check for b2m (strong indicator of MHC-I)
-        has_b2m = any('b2m' in chain_type for chain_type in mhc_i_result.values())
-        
-        # Check for MHC-II specific patterns
-        has_mhc_ii_alpha = any('mhc_ii_alpha' in chain_type for chain_type in mhc_ii_result.values())
-        has_mhc_ii_beta = any('mhc_ii_beta' in chain_type for chain_type in mhc_ii_result.values())
-        
-        # Check for peptide length indicators
-        has_long_peptides = any('peptide' in chain_type for chain_type in mhc_ii_result.values())
-        has_short_peptides = any('peptide' in chain_type for chain_type in mhc_i_result.values())
-        
-        # Decision logic with improved scoring
-        if has_b2m:
-            detected_type = "mhc-i"
-            reason = "β2-microglobulin detected"
-        elif has_mhc_ii_alpha and has_mhc_ii_beta:
-            detected_type = "mhc-ii"
-            reason = "MHC-II α/β heterodimer detected"
-        elif mhc_ii_unknown == 0 and mhc_i_unknown > 0:
-            detected_type = "mhc-ii"
-            reason = "MHC-II analysis perfect, MHC-I has unknown chains"
-        elif mhc_i_unknown == 0 and mhc_ii_unknown > 0:
-            detected_type = "mhc-i"
-            reason = "MHC-I analysis perfect, MHC-II has unknown chains"
-        elif mhc_ii_unknown < mhc_i_unknown:
-            detected_type = "mhc-ii"
-            reason = f"fewer unknown chains with MHC-II analysis ({mhc_ii_unknown} vs {mhc_i_unknown})"
-        elif mhc_i_unknown < mhc_ii_unknown:
-            detected_type = "mhc-i"
-            reason = f"fewer unknown chains with MHC-I analysis ({mhc_i_unknown} vs {mhc_ii_unknown})"
-        elif len(mhc_ii_result) >= 8:  # Large number of chains suggests MHC-II multi-complex
-            detected_type = "mhc-ii"
-            reason = "large number of chains suggests MHC-II multi-complex"
-        else:
-            detected_type = "mhc-i"  # Default fallback
-            reason = "defaulting to MHC-I (both analyses similar)"
-        
-        if verbose:
-            print(f"✅ Detected: {detected_type.upper()} complex ({reason})")
-            print(f"   MHC-I analysis: {len(mhc_i_result) - mhc_i_unknown}/{len(mhc_i_result)} chains identified")
-            print(f"   MHC-II analysis: {len(mhc_ii_result) - mhc_ii_unknown}/{len(mhc_ii_result)} chains identified")
-        
-        return detected_type
-        
-    except Exception as e:
-        if verbose:
-            print(f"⚠️  Auto-detection failed: {e}")
-            print("🔄 Defaulting to MHC-I analyzer")
-        return "mhc-i"
-
-
-def run_analysis(analyzer_type: str, pdb_file: str, verbose: bool = False, output_file: str = None) -> dict:
-    """Run the specified analyzer on the PDB file."""
-    
-    # Initialize the appropriate analyzer
-    if analyzer_type == "mhc-i":
-        analyzer = pMHCITCRAnalyzer(verbose=verbose)
-        analyzer_name = "MHC-I (pHLA-TCR)"
-    elif analyzer_type == "mhc-ii":
-        analyzer = pMHCIITCRAnalyzer(verbose=verbose)
-        analyzer_name = "MHC-II (pMHC-II-TCR)"
-    else:
-        raise ValueError(f"Unknown analyzer type: {analyzer_type}")
-    
-    print(f"🧬 Running {analyzer_name} Analysis")
-    print("=" * 50)
-    
-    # Run analysis
-    try:
-        results = analyzer.analyze_pdb(pdb_file)
+        for complex_name, complex_data in results.items():
+            chains = complex_data.get('chains', {})
+            pairs = complex_data.get('pairs', [])
+            
+            total_chains += len(chains)
+            total_complexes += len(pairs)
+            
+            for pair in pairs:
+                if pair.get('type') == 'MHC-I':
+                    mhc_i_complexes += 1
+                elif pair.get('type') == 'MHC-II':
+                    mhc_ii_complexes += 1
+                elif pair.get('type') == 'UNPAIRED_TCR':
+                    unpaired_tcrs += 1
         
         # Display results
         print(f"\n📊 Analysis Results for {os.path.basename(pdb_file)}:")
-        print("-" * 40)
+        print("-" * 50)
         
-        for chain_id in sorted(results.keys()):
-            chain_type = results[chain_id]
-            print(f"  Chain {chain_id}: {chain_type}")
+        for complex_name, complex_data in sorted(results.items()):
+            print(f"\n{complex_name.replace('_', ' ').title()}:")
+            
+            # Show chain assignments
+            chains = complex_data.get('chains', {})
+            if chains:
+                print("  Chain Assignments:")
+                for chain_id, chain_type in sorted(chains.items()):
+                    # Map to author chain ID if available
+                    display_id = chain_id_map.get(chain_id, chain_id) if chain_id_map else chain_id
+                    print(f"    Chain {display_id}: {format_chain_type(chain_type)}")
+            
+            # Show paired complexes
+            pairs = complex_data.get('pairs', [])
+            if pairs:
+                print("  Identified Complexes:")
+                for i, pair in enumerate(pairs, 1):
+                    # Handle TCR chains
+                    tcr_info = []
+                    if pair.get('tcr_alpha'):
+                        tcr_info.append(f"TCR-α[{chain_id_map.get(pair['tcr_alpha'], pair['tcr_alpha']) if chain_id_map else pair['tcr_alpha']}]")
+                    if pair.get('tcr_beta'):
+                        tcr_info.append(f"TCR-β[{chain_id_map.get(pair['tcr_beta'], pair['tcr_beta']) if chain_id_map else pair['tcr_beta']}]")
+                    
+                    tcr_str = " + ".join(tcr_info) if tcr_info else "No TCR"
+                    
+                    # Handle pMHC complex
+                    if pair.get('type') == 'MHC-I':
+                        mhc_str = (f"MHC-I[{chain_id_map.get(pair.get('mhc_alpha', '-'), pair.get('mhc_alpha', '-')) if chain_id_map else pair.get('mhc_alpha', '-')}] + "
+                                  f"B2M[{chain_id_map.get(pair.get('b2m', '-'), pair.get('b2m', '-')) if chain_id_map else pair.get('b2m', '-')}] + "
+                                  f"Pep[{chain_id_map.get(pair.get('peptide', '-'), pair.get('peptide', '-')) if chain_id_map else pair.get('peptide', '-')}]")
+                    elif pair.get('type') == 'MHC-II':
+                        mhc_str = (f"MHC-II-α[{chain_id_map.get(pair.get('mhc_alpha', '-'), pair.get('mhc_alpha', '-')) if chain_id_map else pair.get('mhc_alpha', '-')}] + "
+                                  f"MHC-II-β[{chain_id_map.get(pair.get('mhc_beta', '-'), pair.get('mhc_beta', '-')) if chain_id_map else pair.get('mhc_beta', '-')}] + "
+                                  f"Pep[{chain_id_map.get(pair.get('peptide', '-'), pair.get('peptide', '-')) if chain_id_map else pair.get('peptide', '-')}]")
+                    elif pair.get('type') == 'UNPAIRED_TCR':
+                        mhc_str = "No pMHC (Unpaired TCR)"
+                    else:
+                        mhc_str = "Unknown complex"
+                    
+                    print(f"    Complex #{i}: {tcr_str} :: {mhc_str}")
         
-        # Summary statistics
-        total_chains = len(results)
-        unknown_chains = sum(1 for chain_type in results.values() if chain_type == 'unknown')
-        identified_chains = total_chains - unknown_chains
-        
+        # Summary
         print(f"\n✅ Summary:")
-        print(f"  Total chains: {total_chains}")
-        print(f"  Identified: {identified_chains}")
-        print(f"  Unknown: {unknown_chains}")
-        
-        if unknown_chains == 0:
-            print("🎯 Perfect! All chains identified successfully.")
-        elif unknown_chains <= 2:
-            print("👍 Good analysis with minimal unknown chains.")
-        else:
-            print("⚠️  Some chains could not be identified. Consider trying the other analyzer.")
-        
-        # Save to file if requested
-        if output_file:
-            save_results_to_file(results, pdb_file, analyzer_name, output_file, verbose, append=False)
+        print(f"  Total chains identified: {total_chains}")
+        print(f"  Total complexes found: {total_complexes}")
+        if mhc_i_complexes:
+            print(f"  MHC-I complexes: {mhc_i_complexes}")
+        if mhc_ii_complexes:
+            print(f"  MHC-II complexes: {mhc_ii_complexes}")
+        if unpaired_tcrs:
+            print(f"  Unpaired TCRs: {unpaired_tcrs}")
         
         return results
         
-    except FileNotFoundError:
-        print(f"❌ Error: PDB file '{pdb_file}' not found.")
-        sys.exit(1)
     except Exception as e:
-        print(f"❌ Error during analysis: {e}")
-        sys.exit(1)
-
-
-def save_results_to_file(results: dict, pdb_file: str, analyzer_name: str, output_file: str, verbose: bool = False, append: bool = False):
-    """Save analysis results to a file."""
-    try:
-        mode = 'a' if append else 'w'
-        with open(output_file, mode) as f:
-            f.write(f"pHLA-TCR Splicer Analysis Report\n")
-            f.write(f"================================\n\n")
-            f.write(f"Analyzer: {analyzer_name}\n")
-            f.write(f"PDB File: {pdb_file}\n")
-            f.write(f"Timestamp: {__import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-            
-            f.write("Chain Assignments:\n")
-            f.write("-" * 18 + "\n")
-            for chain_id in sorted(results.keys()):
-                chain_type = results[chain_id]
-                f.write(f"Chain {chain_id}: {chain_type}\n")
-            
-            # Summary
-            total_chains = len(results)
-            unknown_chains = sum(1 for chain_type in results.values() if chain_type == 'unknown')
-            f.write(f"\nSummary:\n")
-            f.write(f"Total chains: {total_chains}\n")
-            f.write(f"Identified: {total_chains - unknown_chains}\n")
-            f.write(f"Unknown: {unknown_chains}\n")
-        
+        logger.error(f"Error analyzing {pdb_file}: {e}")
         if verbose:
-            print(f"💾 Results saved to: {output_file}")
-            
-    except Exception as e:
-        print(f"⚠️  Warning: Could not save results to {output_file}: {e}")
+            import traceback
+            traceback.print_exc()
+        return {}
 
 
-def run_batch_analysis(pdb_files: list, analyzer_type: str, auto_detect: bool, 
-                      verbose: bool = False, output_file: str = None, show_summary: bool = False) -> dict:
-    """Run batch analysis on multiple PDB files."""
+def write_summary_csv(all_results: List[Dict], output_file: str):
+    """Write a summary CSV file for batch processing."""
+    if not all_results:
+        logger.info("No results to write to CSV")
+        return
     
-    batch_results = {}
-    successful_analyses = 0
-    failed_analyses = 0
-    total_chains = 0
-    total_identified = 0
+    headers = [
+        'PDB File', 'Complex ID', 'Complex Type',
+        'TCR_Alpha', 'TCR_Beta',
+        'MHC_Alpha', 'MHC_Beta', 'B2M',
+        'Peptide'
+    ]
     
-    # Initialize output file if specified
-    if output_file:
-        with open(output_file, 'w') as f:
-            f.write("pHLA-TCR Splicer Batch Analysis Report\n")
-            f.write("=" * 40 + "\n")
-            f.write(f"Timestamp: {__import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"Total files: {len(pdb_files)}\n\n")
-    
-    print(f"🧬 Running Batch Analysis")
-    print("=" * 50)
-    print(f"Files to process: {len(pdb_files)}")
-    print()
-    
-    for i, pdb_file in enumerate(pdb_files, 1):
-        try:
-            # Check if file exists
-            if not os.path.exists(pdb_file):
-                print(f"❌ File {i}/{len(pdb_files)}: '{pdb_file}' not found - SKIPPING")
-                failed_analyses += 1
-                batch_results[pdb_file] = {"status": "file_not_found", "results": None}
-                continue
-            
-            print(f"📊 Processing {i}/{len(pdb_files)}: {os.path.basename(pdb_file)}")
-            
-            # Determine analyzer type for this file
-            if auto_detect:
-                current_analyzer_type = detect_complex_type(pdb_file, verbose)
-                if verbose:
-                    print(f"   Auto-detected: {current_analyzer_type.upper()}")
-            else:
-                current_analyzer_type = analyzer_type
-            
-            # Run analysis
-            results = run_analysis(current_analyzer_type, pdb_file, verbose=False, output_file=None)
-            
-            # Track statistics
-            successful_analyses += 1
-            file_total_chains = len(results)
-            file_identified = sum(1 for chain_type in results.values() if chain_type != 'unknown')
-            total_chains += file_total_chains
-            total_identified += file_identified
-            
-            # Store results
-            batch_results[pdb_file] = {
-                "status": "success", 
-                "analyzer": current_analyzer_type,
-                "results": results,
-                "stats": {
-                    "total_chains": file_total_chains,
-                    "identified": file_identified,
-                    "unknown": file_total_chains - file_identified
-                }
-            }
-            
-            print(f"   ✅ {file_identified}/{file_total_chains} chains identified")
-            
-            # Append to output file if specified
-            if output_file:
-                save_results_to_file(results, pdb_file, 
-                                   f"{current_analyzer_type.upper()} Analyzer", 
-                                   output_file, verbose=False, append=True)
-            
-        except Exception as e:
-            print(f"   ❌ Analysis failed: {str(e)}")
-            failed_analyses += 1
-            batch_results[pdb_file] = {"status": "analysis_failed", "error": str(e), "results": None}
+    rows = []
+    for result in all_results:
+        pdb_file = result['pdb_file']
+        results = result['results']
         
-        if not verbose and i < len(pdb_files):
-            print()  # Blank line between files for readability
+        for complex_name, complex_data in results.items():
+            pairs = complex_data.get('pairs', [])
+            for i, pair in enumerate(pairs):
+                row = {
+                    'PDB File': os.path.basename(pdb_file),
+                    'Complex ID': f"{complex_name}_{i+1}",
+                    'Complex Type': pair.get('type', 'Unknown'),
+                    'TCR_Alpha': pair.get('tcr_alpha', ''),
+                    'TCR_Beta': pair.get('tcr_beta', ''),
+                    'MHC_Alpha': pair.get('mhc_alpha', ''),
+                    'MHC_Beta': pair.get('mhc_beta', ''),
+                    'B2M': pair.get('b2m', ''),
+                    'Peptide': pair.get('peptide', '')
+                }
+                rows.append(row)
     
-    # Show summary if requested
-    if show_summary or len(pdb_files) > 1:
-        print("\n📈 Batch Analysis Summary")
-        print("=" * 30)
-        print(f"Total files processed: {len(pdb_files)}")
-        print(f"Successful analyses: {successful_analyses}")
-        print(f"Failed analyses: {failed_analyses}")
-        if successful_analyses > 0:
-            print(f"Total chains: {total_chains}")
-            print(f"Identified chains: {total_identified}")
-            print(f"Unknown chains: {total_chains - total_identified}")
-            success_rate = (total_identified / total_chains * 100) if total_chains > 0 else 0
-            print(f"Identification rate: {success_rate:.1f}%")
+    with open(output_file, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=headers)
+        writer.writeheader()
+        writer.writerows(rows)
     
-    return batch_results
+    logger.info(f"Summary CSV saved to {output_file}")
 
 
 def main():
-    """Main entry point for the pHLA-TCR Splicer."""
     parser = argparse.ArgumentParser(
-        description="pHLA-TCR Splicer: Analyze protein complex structures",
+        description="Analyze TCR-pMHC structures in PDB/CIF files",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  %(prog)s --type mhc-i 1oga.pdb
-  %(prog)s --type mhc-ii 4z7u.pdb  
-  %(prog)s --auto complex.pdb --verbose
-  %(prog)s --type mhc-i input.pdb --output results.txt
-  %(prog)s --type mhc-i *.pdb --batch-summary
-  %(prog)s --auto file1.pdb file2.pdb file3.pdb --output batch_results.txt
-
-Analyzer Types:
-  mhc-i   : MHC Class I complexes (pHLA-TCR)
-            - MHC heavy chain, β2-microglobulin, short peptides (8-11), TCR α/β
-  
-  mhc-ii  : MHC Class II complexes (pMHC-II-TCR)  
-            - MHC-II α/β chains, longer peptides (12-25), TCR α/β
-  
-  auto    : Automatically detect complex type (experimental)
-        """
+        epilog=__doc__
     )
     
-    # Analyzer selection (mutually exclusive)
-    analyzer_group = parser.add_mutually_exclusive_group(required=True)
-    analyzer_group.add_argument(
-        '--type', 
-        choices=['mhc-i', 'mhc-ii'],
-        help='Specify analyzer type for all files'
-    )
-    analyzer_group.add_argument(
-        '--auto', 
-        action='store_true',
-        help='Auto-detect complex type for each file (experimental)'
-    )
+    # Required arguments
+    parser.add_argument('input', nargs='+', 
+                       help='Input PDB/CIF file(s) or directory')
     
-    # Required PDB file(s)
-    parser.add_argument(
-        'pdb_files',
-        nargs='+',
-        help='Path(s) to PDB file(s) to analyze'
-    )
+    # Output options
+    parser.add_argument('-o', '--output', 
+                       help='Output file for single analysis')
+    parser.add_argument('--output-dir', default='output',
+                       help='Output directory for batch analysis (default: output)')
+    parser.add_argument('--batch-summary', action='store_true',
+                       help='Generate summary CSV for batch processing')
     
-    # Optional arguments
-    parser.add_argument(
-        '--output', '-o',
-        help='Output file to save results (optional). For multiple files, results are appended.'
-    )
-    parser.add_argument(
-        '--batch-summary',
-        action='store_true',
-        help='Show summary statistics for batch processing'
-    )
-    parser.add_argument(
-        '--verbose', '-v',
-        action='store_true',
-        help='Enable verbose output'
-    )
-    parser.add_argument(
-        '--version',
-        action='version',
-        version='pHLA-TCR Splicer v1.0.0'
-    )
+    # Analysis options
+    parser.add_argument('-v', '--verbose', action='store_true',
+                       help='Enable verbose output')
     
-    # Parse arguments
+    # Tuning parameters
+    parser.add_argument('--eps', type=float, default=60.0,
+                       help='DBSCAN clustering distance in Å (default: 60.0)')
+    parser.add_argument('--align-score', type=int, default=20,
+                       help='Min alignment score for TCR classification (default: 20)')
+    parser.add_argument('--align-ratio', type=float, default=1.5,
+                       help='Score ratio for TCR α/β discrimination (default: 1.5)')
+    
+    # Distance thresholds
+    parser.add_argument('--tcr-pair-dist', type=float, default=50.0,
+                       help='Max distance for TCR α/β pairing (default: 50.0)')
+    parser.add_argument('--mhc1-pair-dist', type=float, default=50.0,
+                       help='Max distance for MHC-I/B2M pairing (default: 50.0)')
+    parser.add_argument('--mhc2-pair-dist', type=float, default=50.0,
+                       help='Max distance for MHC-II α/β pairing (default: 50.0)')
+    parser.add_argument('--pep-mhc1-dist', type=float, default=40.0,
+                       help='Max distance for Peptide/MHC-I pairing (default: 40.0)')
+    parser.add_argument('--pep-mhc2-dist', type=float, default=60.0,
+                       help='Max distance for Peptide/MHC-II pairing (default: 60.0)')
+    parser.add_argument('--tcr-pmhc-dist', type=float, default=150.0,
+                       help='Max distance for TCR/pMHC pairing (default: 150.0)')
+    parser.add_argument('--tcr-pmhc-dist-unpaired', type=float, default=120.0,
+                       help='Max distance for single-chain TCR/pMHC (default: 120.0)')
+    parser.add_argument('--reclassify-dist', type=float, default=50.0,
+                       help='Max distance for reclassifying UNKNOWN chains (default: 50.0)')
+    
     args = parser.parse_args()
     
-    # Handle single vs multiple files
-    if len(args.pdb_files) == 1:
-        # Single file analysis (original behavior)
-        pdb_file = args.pdb_files[0]
-        
-        # Validate PDB file exists
-        if not os.path.exists(pdb_file):
-            print(f"❌ Error: PDB file '{pdb_file}' does not exist.")
-            sys.exit(1)
-        
-        # Determine analyzer type
-        if args.auto:
-            analyzer_type = detect_complex_type(pdb_file, args.verbose)
-        else:
-            analyzer_type = args.type
-        
-        # Run analysis
-        try:
-            results = run_analysis(analyzer_type, pdb_file, args.verbose, args.output)
-            
-            print("\n🎉 Analysis completed successfully!")
-            if args.verbose:
-                print(f"📁 Analyzed: {pdb_file}")
-                print(f"🔬 Used: {analyzer_type.upper()} analyzer")
-                if args.output:
-                    print(f"💾 Saved: {args.output}")
-            
-        except KeyboardInterrupt:
-            print("\n⚠️  Analysis interrupted by user.")
-            sys.exit(1)
+    if args.verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
     
-    else:
-        # Batch analysis for multiple files
-        try:
-            batch_results = run_batch_analysis(
-                args.pdb_files, 
-                args.type, 
-                args.auto,
-                args.verbose, 
-                args.output,
-                args.batch_summary
-            )
-            
-            print("\n🎉 Batch analysis completed successfully!")
-            if args.output:
-                print(f"💾 Results saved to: {args.output}")
-                
-        except KeyboardInterrupt:
-            print("\n⚠️  Batch analysis interrupted by user.")
-            sys.exit(1)
+    # Initialize analyzer with parameters
+    analyzer = TCRpMHCAnalyzer(
+        verbose=args.verbose,
+        eps=args.eps,
+        align_score=args.align_score,
+        align_ratio=args.align_ratio,
+        tcr_pair_dist=args.tcr_pair_dist,
+        mhc1_pair_dist=args.mhc1_pair_dist,
+        mhc2_pair_dist=args.mhc2_pair_dist,
+        pep_mhc1_dist=args.pep_mhc1_dist,
+        pep_mhc2_dist=args.pep_mhc2_dist,
+        tcr_pmhc_dist=args.tcr_pmhc_dist,
+        tcr_pmhc_dist_unpaired=args.tcr_pmhc_dist_unpaired,
+        reclassify_dist=args.reclassify_dist
+    )
+    
+    # Collect input files
+    input_files = []
+    for input_path in args.input:
+        if os.path.isdir(input_path):
+            # Process directory
+            path = Path(input_path)
+            input_files.extend(path.glob('*.pdb'))
+            input_files.extend(path.glob('*.cif'))
+        else:
+            # Process file pattern or single file
+            from glob import glob
+            matching = glob(input_path)
+            input_files.extend([Path(f) for f in matching])
+    
+    if not input_files:
+        print(f"❌ No PDB/CIF files found in: {args.input}")
+        sys.exit(1)
+    
+    print(f"📁 Found {len(input_files)} file(s) to analyze")
+    
+    # Process files
+    all_results = []
+    for pdb_file in input_files:
+        results = run_analysis(str(pdb_file), analyzer, args.verbose)
+        if results:
+            all_results.append({
+                'pdb_file': str(pdb_file),
+                'results': results
+            })
+        
+        # Save individual output if requested
+        if args.output and len(input_files) == 1:
+            with open(args.output, 'w') as f:
+                f.write(f"Analysis Results for {pdb_file.name}\n")
+                f.write("=" * 60 + "\n\n")
+                for complex_name, complex_data in results.items():
+                    f.write(f"{complex_name}:\n")
+                    f.write("  Chains:\n")
+                    for chain_id, chain_type in complex_data.get('chains', {}).items():
+                        f.write(f"    {chain_id}: {chain_type}\n")
+                    f.write("  Complexes:\n")
+                    for i, pair in enumerate(complex_data.get('pairs', []), 1):
+                        f.write(f"    Complex #{i}: {pair}\n")
+                    f.write("\n")
+            print(f"💾 Results saved to {args.output}")
+    
+    # Generate batch summary if requested
+    if args.batch_summary and len(input_files) > 1:
+        os.makedirs(args.output_dir, exist_ok=True)
+        summary_file = os.path.join(args.output_dir, 'chain_summary.csv')
+        write_summary_csv(all_results, summary_file)
+        print(f"📊 Batch summary saved to {summary_file}")
+    
+    print(f"\n✨ Analysis complete! Processed {len(input_files)} file(s)")
 
 
 if __name__ == "__main__":
